@@ -1,95 +1,66 @@
-/**
- * SERVER-ONLY in-memory notification store.
- *
- * ⚠️  This is a development stub. It loses data on server restart and does
- *     not work across multiple worker instances. When you connect your
- *     Supabase project, replace these functions with calls to your
- *     `notifications` / `notification_preferences` tables (see TODOs).
- *
- * Suggested Supabase schema:
- *   create table public.notifications (
- *     id uuid primary key default gen_random_uuid(),
- *     source text not null,
- *     category text not null,
- *     severity text not null,
- *     title text not null,
- *     body text not null,
- *     subject text,
- *     avatar_url text,
- *     actions jsonb,
- *     channels text[] default '{inapp}',
- *     raw jsonb,
- *     read boolean default false,
- *     created_at timestamptz default now()
- *   );
- *   -- + RLS + GRANTs + Realtime publication for live UI updates.
- */
-
 import type {
   NotificationPreferences,
   UnifiedNotification,
 } from "@/types/notification";
+import {
+  defaultPreferences,
+  deleteNotification,
+  getPersistedPreferences,
+  listPersistedNotifications,
+  persistAllRead,
+  persistNotification,
+  persistPreferences,
+  persistReadState,
+} from "./notification-persistence.server";
 
-const store: UnifiedNotification[] = seed();
+const fallbackStore: UnifiedNotification[] = seed();
+let fallbackPreferences: NotificationPreferences = defaultPreferences();
 
-let preferences: NotificationPreferences = {
-  global: { inapp: true, email: true, push: true, chat: false, sms: false },
-  workflows: [
-    {
-      workflowId: "onboarding",
-      name: "Onboarding workflow",
-      channels: { inapp: true, email: true, push: true, chat: true, sms: true },
-    },
-    {
-      workflowId: "comment-mentions",
-      name: "Comment Mentions",
-      channels: { inapp: true, email: false, push: false, chat: false, sms: true },
-    },
-    {
-      workflowId: "invite-friend",
-      name: "Invite friend",
-      channels: { inapp: true, email: true, push: false, chat: true, sms: false },
-    },
-  ],
-};
-
-export function listNotifications(): UnifiedNotification[] {
-  // TODO(supabase): replace with
-  //   supabase.from('notifications').select('*').order('created_at', { ascending: false })
-  return [...store].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+export async function listNotifications(): Promise<UnifiedNotification[]> {
+  const rows = await listPersistedNotifications();
+  return rows.length ? rows : [...fallbackStore].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
-export function addNotification(n: UnifiedNotification) {
-  // TODO(supabase): supabase.from('notifications').insert(n)
-  store.unshift(n);
-  if (store.length > 500) store.length = 500;
+export async function addNotification(n: UnifiedNotification) {
+  const result = await persistNotification(n);
+  if (!result.ok && result.reason === "not_configured") {
+    fallbackStore.unshift(n);
+    if (fallbackStore.length > 500) fallbackStore.length = 500;
+  }
 }
 
-export function markRead(id: string, read: boolean) {
-  // TODO(supabase): supabase.from('notifications').update({ read }).eq('id', id)
-  const n = store.find((x) => x.id === id);
-  if (n) n.read = read;
+export async function markRead(id: string, read: boolean) {
+  const result = await persistReadState(id, read);
+  if (!result.ok && result.reason === "not_configured") {
+    const n = fallbackStore.find((x) => x.id === id);
+    if (n) n.read = read;
+  }
 }
 
-export function markAllRead() {
-  // TODO(supabase): supabase.from('notifications').update({ read: true }).eq('read', false)
-  store.forEach((n) => (n.read = true));
+export async function markAllRead() {
+  const result = await persistAllRead();
+  if (!result.ok && result.reason === "not_configured") {
+    fallbackStore.forEach((n) => (n.read = true));
+  }
 }
 
-export function removeNotification(id: string) {
-  // TODO(supabase): supabase.from('notifications').delete().eq('id', id)
-  const i = store.findIndex((x) => x.id === id);
-  if (i >= 0) store.splice(i, 1);
+export async function removeNotification(id: string) {
+  const result = await deleteNotification(id);
+  if (!result.ok && result.reason === "not_configured") {
+    const i = fallbackStore.findIndex((x) => x.id === id);
+    if (i >= 0) fallbackStore.splice(i, 1);
+  }
 }
 
-export function getPreferences(): NotificationPreferences {
-  // TODO(supabase): SELECT from notification_preferences for current user
-  return preferences;
+export async function getPreferences(): Promise<NotificationPreferences> {
+  return getPersistedPreferences().catch(() => fallbackPreferences);
 }
 
-export function savePreferences(p: NotificationPreferences) {
-  // TODO(supabase): UPSERT notification_preferences row
-  preferences = p;
+export async function savePreferences(p: NotificationPreferences) {
+  const result = await persistPreferences(p);
+  if (!result.ok && result.reason === "not_configured") {
+    fallbackPreferences = p;
+  }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -99,6 +70,7 @@ function seed(): UnifiedNotification[] {
   return [
     {
       id: "seed-1",
+      tenantId: "default",
       source: "meta",
       category: "projects",
       severity: "info",
@@ -117,6 +89,7 @@ function seed(): UnifiedNotification[] {
     },
     {
       id: "seed-2",
+      tenantId: "default",
       source: "uberfix",
       category: "projects",
       severity: "info",
@@ -134,6 +107,7 @@ function seed(): UnifiedNotification[] {
     },
     {
       id: "seed-3",
+      tenantId: "default",
       source: "accounting",
       category: "alerts",
       severity: "warning",
@@ -150,6 +124,7 @@ function seed(): UnifiedNotification[] {
     },
     {
       id: "seed-4",
+      tenantId: "default",
       source: "system",
       category: "announcements",
       severity: "success",
