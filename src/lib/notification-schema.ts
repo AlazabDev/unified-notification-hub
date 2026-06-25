@@ -1,10 +1,22 @@
 import { z } from "zod";
 import type {
+  JsonValue,
   NotificationSource,
   UnifiedNotification,
   NotificationCategory,
   NotificationSeverity,
 } from "@/types/notification";
+
+const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
+  z.union([
+    z.string(),
+    z.number(),
+    z.boolean(),
+    z.null(),
+    z.array(jsonValueSchema),
+    z.record(z.string(), jsonValueSchema),
+  ]),
+);
 
 /**
  * Generic ingestion envelope. Any source can post this shape and we
@@ -33,7 +45,7 @@ export const ingestSchema = z.object({
     .max(4)
     .optional(),
   /** Free-form original payload from the source system */
-  payload: z.record(z.string(), z.unknown()).optional(),
+  payload: z.record(z.string(), jsonValueSchema).optional(),
 });
 
 export type IngestPayload = z.infer<typeof ingestSchema>;
