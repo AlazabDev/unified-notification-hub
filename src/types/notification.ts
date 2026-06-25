@@ -41,7 +41,12 @@ export interface NotificationAction {
 
 export interface UnifiedNotification {
   id: string;
+  tenantId?: string;
+  sourceId?: string;
+  recipientUserId?: string;
   source: NotificationSource;
+  eventType?: string;
+  dedupeKey?: string;
   category: NotificationCategory;
   severity: NotificationSeverity;
   title: string;
