@@ -23,9 +23,13 @@ const jsonValueSchema: z.ZodType<JsonValue> = z.lazy(() =>
  * normalize it. Source-specific adapters live below.
  */
 export const ingestSchema = z.object({
+  tenantId: z.string().trim().min(1).max(120).optional(),
+  recipientUserId: z.string().trim().min(1).max(160).optional(),
   source: z.enum(["meta", "uberfix", "accounting", "system", "custom"]),
   /** Optional event type the source assigns (used by adapter to classify). */
-  eventType: z.string().min(1).max(120).optional(),
+  eventType: z.string().trim().min(1).max(120).optional(),
+  /** Optional idempotency key supplied by webhook callers to prevent duplicates. */
+  dedupeKey: z.string().trim().min(1).max(180).optional(),
   title: z.string().trim().min(1).max(200).optional(),
   body: z.string().trim().min(1).max(2000).optional(),
   severity: z.enum(["info", "success", "warning", "critical"]).optional(),
@@ -82,7 +86,11 @@ export function normalize(input: IngestPayload): UnifiedNotification {
 
   return {
     id,
+    tenantId: input.tenantId,
+    recipientUserId: input.recipientUserId,
     source: input.source,
+    eventType: input.eventType,
+    dedupeKey: input.dedupeKey,
     category: input.category ?? d.category,
     severity: input.severity ?? d.severity,
     title,
@@ -94,7 +102,7 @@ export function normalize(input: IngestPayload): UnifiedNotification {
     read: false,
     raw: input.payload,
     channels: ["inapp"],
-  };
+  } as UnifiedNotification;
 }
 
 function autoTitle(input: IngestPayload): string | undefined {
