@@ -37,9 +37,7 @@ export const ingestNotificationFn = createServerFn({ method: "POST" })
   .handler(async ({ data }): Promise<UnifiedNotification> => {
     const { addNotification } = await import("./notification-store.server");
     const n = normalize(data);
-    addNotification(n);
-    // TODO(queue): enqueue channel delivery here (email/sms/push) via your
-    // worker of choice once Supabase is connected.
+    await addNotification(n);
     return n;
   });
 
@@ -49,14 +47,14 @@ export const markReadFn = createServerFn({ method: "POST" })
   )
   .handler(async ({ data }) => {
     const { markRead } = await import("./notification-store.server");
-    markRead(data.id, data.read);
+    await markRead(data.id, data.read);
     return { ok: true };
   });
 
 export const markAllReadFn = createServerFn({ method: "POST" }).handler(
   async () => {
     const { markAllRead } = await import("./notification-store.server");
-    markAllRead();
+    await markAllRead();
     return { ok: true };
   },
 );
@@ -65,7 +63,7 @@ export const removeNotificationFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data }) => {
     const { removeNotification } = await import("./notification-store.server");
-    removeNotification(data.id);
+    await removeNotification(data.id);
     return { ok: true };
   });
 
@@ -80,6 +78,6 @@ export const savePreferencesFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => preferencesSchema.parse(d))
   .handler(async ({ data }) => {
     const { savePreferences } = await import("./notification-store.server");
-    savePreferences(data);
+    await savePreferences(data);
     return { ok: true };
   });
