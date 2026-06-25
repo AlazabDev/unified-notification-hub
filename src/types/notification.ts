@@ -46,8 +46,8 @@ export interface UnifiedNotification {
   /** Subject identity (e.g. user email, account, project name) */
   subject?: string;
   actions?: NotificationAction[];
-  /** Raw original payload, for audit/replay */
-  raw?: Record<string, unknown>;
+  /** Raw original payload, for audit/replay (JSON-serializable) */
+  raw?: JsonValue;
   /** Channels the system attempted / will attempt to deliver on */
   channels?: NotificationChannel[];
 }
