@@ -1,5 +1,5 @@
 {
-  "name": "tanstack_start_ts",
+  "name": "az-notification-hub",
   "private": true,
   "sideEffects": false,
   "type": "module",
@@ -9,6 +9,8 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "check": "bun run lint && bun run typecheck && bun run build",
     "format": "prettier --write ."
   },
   "dependencies": {
