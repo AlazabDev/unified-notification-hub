@@ -1,14 +1,57 @@
-import type { UnifiedNotification } from "@/types/notification";
+import type { JsonValue, UnifiedNotification } from "@/types/notification";
 import { getServerEnv, isEnabledEnv } from "./env.server";
 
 export type PersistenceResult =
   | { persisted: true }
   | { persisted: false; reason: "not_configured" | "failed"; error?: string };
 
+export type EventLogInput = {
+  tenantId?: string;
+  sourceId?: string;
+  requestId?: string;
+  dedupeKey?: string;
+  eventType?: string;
+  status: "accepted" | "rejected" | "duplicate" | "failed";
+  statusCode: number;
+  errorCode?: string;
+  errorMessage?: string;
+  ipHash?: string;
+  userAgent?: string;
+  rawPayload?: JsonValue;
+  notificationId?: string;
+};
+
+function getSupabaseConfig() {
+  const supabaseUrl = getServerEnv("SUPABASE_URL")?.replace(/\/$/, "");
+  const serviceKey = getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
+
+  if (!supabaseUrl || !serviceKey) {
+    if (isEnabledEnv("REQUIRE_SUPABASE")) {
+      throw new Error(
+        "Supabase persistence is required but SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.",
+      );
+    }
+    return undefined;
+  }
+
+  return { supabaseUrl, serviceKey };
+}
+
+function headers(serviceKey: string, prefer = "return=minimal") {
+  return {
+    apikey: serviceKey,
+    authorization: `Bearer ${serviceKey}`,
+    "content-type": "application/json",
+    prefer,
+  };
+}
+
 function toSupabaseRow(notification: UnifiedNotification) {
+  const withSource = notification as UnifiedNotification & { sourceId?: string };
   return {
     id: notification.id,
     tenant_id: notification.tenantId ?? "default",
+    source_id: withSource.sourceId ?? null,
     recipient_user_id: notification.recipientUserId ?? null,
     source: notification.source,
     event_type: notification.eventType ?? null,
@@ -27,38 +70,15 @@ function toSupabaseRow(notification: UnifiedNotification) {
   };
 }
 
-/**
- * Edge-safe persistence using Supabase PostgREST directly.
- *
- * This intentionally avoids adding @supabase/supabase-js until the lockfile is
- * regenerated in the actual project environment. It works in Cloudflare Workers
- * because it only depends on the standard fetch API.
- */
-export async function persistNotification(
-  notification: UnifiedNotification,
-): Promise<PersistenceResult> {
-  const supabaseUrl = getServerEnv("SUPABASE_URL")?.replace(/\/$/, "");
-  const serviceRoleKey = getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
-
-  if (!supabaseUrl || !serviceRoleKey) {
-    if (isEnabledEnv("REQUIRE_SUPABASE")) {
-      throw new Error(
-        "Supabase persistence is required but SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.",
-      );
-    }
-    return { persisted: false, reason: "not_configured" };
-  }
+async function insertRow(table: string, row: unknown): Promise<PersistenceResult> {
+  const config = getSupabaseConfig();
+  if (!config) return { persisted: false, reason: "not_configured" };
 
   try {
-    const response = await fetch(`${supabaseUrl}/rest/v1/notifications`, {
+    const response = await fetch(`${config.supabaseUrl}/rest/v1/${table}`, {
       method: "POST",
-      headers: {
-        apikey: serviceRoleKey,
-        authorization: `Bearer ${serviceRoleKey}`,
-        "content-type": "application/json",
-        prefer: "return=minimal",
-      },
-      body: JSON.stringify(toSupabaseRow(notification)),
+      headers: headers(config.serviceKey),
+      body: JSON.stringify(row),
     });
 
     if (!response.ok) {
@@ -78,4 +98,52 @@ export async function persistNotification(
       error: error instanceof Error ? error.message : String(error),
     };
   }
+}
+
+/**
+ * Edge-safe persistence using Supabase PostgREST directly.
+ * It works in Cloudflare Workers because it only depends on standard fetch.
+ */
+export async function persistNotification(
+  notification: UnifiedNotification,
+): Promise<PersistenceResult> {
+  return insertRow("notifications", toSupabaseRow(notification));
+}
+
+export async function logNotificationEvent(input: EventLogInput): Promise<PersistenceResult> {
+  return insertRow("notification_events_log", {
+    tenant_id: input.tenantId ?? "default",
+    source_id: input.sourceId ?? null,
+    request_id: input.requestId ?? null,
+    dedupe_key: input.dedupeKey ?? null,
+    event_type: input.eventType ?? null,
+    status: input.status,
+    status_code: input.statusCode,
+    error_code: input.errorCode ?? null,
+    error_message: input.errorMessage ?? null,
+    ip_hash: input.ipHash ?? null,
+    user_agent: input.userAgent ?? null,
+    raw_payload: input.rawPayload ?? null,
+    normalized_notification_id: input.notificationId ?? null,
+  });
+}
+
+export async function createDeliveryJob(
+  notification: UnifiedNotification,
+): Promise<PersistenceResult> {
+  return insertRow("notification_jobs", {
+    notification_id: notification.id,
+    tenant_id: notification.tenantId ?? "default",
+    job_type: "deliver",
+    status: "pending",
+    run_at: new Date().toISOString(),
+    attempts: 0,
+    max_attempts: 5,
+    payload: {
+      notificationId: notification.id,
+      channels: notification.channels ?? ["inapp"],
+      source: notification.source,
+      eventType: notification.eventType ?? null,
+    },
+  });
 }
