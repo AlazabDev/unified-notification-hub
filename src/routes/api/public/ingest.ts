@@ -1,10 +1,14 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { ingestSchema, normalize } from "@/lib/notification-schema";
+import { authorizeIngestRequest } from "@/lib/notification-auth.server";
+import { persistNotification } from "@/lib/notification-persistence.server";
+import { enqueueNotificationReceived } from "@/lib/notification-queue.server";
 
 /**
  * Unified Ingestion endpoint.
  *
  *   POST /api/public/ingest
+ *   Authorization: Bearer <INGEST_TOKEN>
  *   Content-Type: application/json
  *
  *   {
@@ -18,35 +22,37 @@ import { ingestSchema, normalize } from "@/lib/notification-schema";
  *     "payload": { ... raw source payload ... }
  *   }
  *
- * The endpoint validates with Zod, normalizes into UnifiedNotification,
- * and writes to the store. UI polls via TanStack Query.
- *
- * SECURITY: this lives under /api/public which bypasses app auth on the
- * published site. Add an `Authorization: Bearer <INGEST_TOKEN>` check below
- * (or HMAC signature) before going to production.
+ * Edge pipeline:
+ *   1. Verify token.
+ *   2. Validate with Zod.
+ *   3. Normalize into UnifiedNotification.
+ *   4. Persist to Supabase PostgREST when configured.
+ *   5. Send event to Inngest when configured for retries/delays.
+ *   6. Keep the temporary in-memory store updated for the current dashboard.
  */
 export const Route = createFileRoute("/api/public/ingest")({
   server: {
     handlers: {
       POST: async ({ request }) => {
-        // --- Optional shared-secret auth (uncomment after setting INGEST_TOKEN) ---
-        // const token = process.env.INGEST_TOKEN;
-        // const auth = request.headers.get("authorization") ?? "";
-        // if (!token || auth !== `Bearer ${token}`) {
-        //   return new Response("Unauthorized", { status: 401 });
-        // }
+        const auth = authorizeIngestRequest(request);
+        if (!auth.ok) {
+          return Response.json(
+            { ok: false, error: auth.code },
+            { status: auth.status },
+          );
+        }
 
         let body: unknown;
         try {
           body = await request.json();
         } catch {
-          return Response.json({ error: "invalid_json" }, { status: 400 });
+          return Response.json({ ok: false, error: "invalid_json" }, { status: 400 });
         }
 
         const parsed = ingestSchema.safeParse(body);
         if (!parsed.success) {
           return Response.json(
-            { error: "validation_failed", issues: parsed.error.issues },
+            { ok: false, error: "validation_failed", issues: parsed.error.issues },
             { status: 422 },
           );
         }
@@ -55,17 +61,40 @@ export const Route = createFileRoute("/api/public/ingest")({
         const { addNotification } = await import(
           "@/lib/notification-store.server"
         );
+
+        // Transitional UI support. Supabase is the intended source of truth;
+        // this keeps the existing prototype inbox useful until the UI subscribes
+        // directly to Supabase Realtime.
         addNotification(notification);
 
-        // TODO(queue): enqueue downstream channel delivery (email/sms/whatsapp)
-        // once you wire BullMQ replacement (Inngest / pgmq / external worker).
+        const [persistence, queue] = await Promise.all([
+          persistNotification(notification),
+          enqueueNotificationReceived(notification),
+        ]);
 
-        return Response.json({ ok: true, id: notification.id }, { status: 201 });
+        if (persistence.persisted === false && persistence.reason === "failed") {
+          console.error("notification_persistence_failed", persistence.error);
+        }
+        if (queue.queued === false && queue.reason === "failed") {
+          console.error("notification_queue_failed", queue.error);
+        }
+
+        return Response.json(
+          {
+            ok: true,
+            id: notification.id,
+            persistence,
+            queue,
+          },
+          { status: 201 },
+        );
       },
       GET: async () =>
         Response.json({
-          name: "Az Notification Hub — Ingestion API",
+          name: "Az Notification Hub — Edge Ingestion API",
           method: "POST",
+          auth: "Authorization: Bearer <INGEST_TOKEN>",
+          pipeline: ["zod", "normalizer", "supabase-postgrest", "inngest-event"],
           schema: {
             source: "meta|uberfix|accounting|system|custom",
             eventType: "string?",
