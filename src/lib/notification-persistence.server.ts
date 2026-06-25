@@ -8,7 +8,11 @@ export type PersistenceResult =
 function toSupabaseRow(notification: UnifiedNotification) {
   return {
     id: notification.id,
+    tenant_id: notification.tenantId ?? "default",
+    recipient_user_id: notification.recipientUserId ?? null,
     source: notification.source,
+    event_type: notification.eventType ?? null,
+    dedupe_key: notification.dedupeKey ?? null,
     category: notification.category,
     severity: notification.severity,
     title: notification.title,
