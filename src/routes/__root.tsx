@@ -81,18 +81,25 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "AzNotification" },
-      { name: "description", content: "Alazab Notification Hub" },
-      { name: "author", content: "Lovable" },
-      { property: "og:title", content: "AzNotification" },
-      { property: "og:description", content: "Alazab Notification Hub" },
+      { title: "Az Notification Hub" },
+      {
+        name: "description",
+        content:
+          "Edge-first unified notification hub for Alazab systems, built with TanStack Start, Zod, Supabase Realtime, and Inngest-ready workflows.",
+      },
+      { name: "author", content: "AlazabDev" },
+      { property: "og:title", content: "Az Notification Hub" },
+      {
+        property: "og:description",
+        content: "مركز الإشعارات الموحد لأنظمة العزب",
+      },
       { property: "og:type", content: "website" },
       { name: "twitter:card", content: "summary" },
-      { name: "twitter:site", content: "@Lovable" },
-      { name: "twitter:title", content: "AzNotification" },
-      { name: "twitter:description", content: "Alazab Notification Hub" },
-      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/y3i6TlLyxbYBEfPuUXOAWdy75WA3/social-images/social-1782354307815-1692a956-c0cd-427b-b44f-931c4a63543a.webp" },
-      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/y3i6TlLyxbYBEfPuUXOAWdy75WA3/social-images/social-1782354307815-1692a956-c0cd-427b-b44f-931c4a63543a.webp" },
+      { name: "twitter:title", content: "Az Notification Hub" },
+      {
+        name: "twitter:description",
+        content: "مركز إشعارات موحد يعمل على Edge Runtime",
+      },
     ],
     links: [
       {
