@@ -14,7 +14,405 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      notification_api_keys: {
+        Row: {
+          active: boolean
+          created_at: string
+          id: string
+          key_hash: string
+          last_used_at: string | null
+          name: string
+          scopes: string[]
+          tenant_id: string
+        }
+        Insert: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          key_hash: string
+          last_used_at?: string | null
+          name: string
+          scopes?: string[]
+          tenant_id?: string
+        }
+        Update: {
+          active?: boolean
+          created_at?: string
+          id?: string
+          key_hash?: string
+          last_used_at?: string | null
+          name?: string
+          scopes?: string[]
+          tenant_id?: string
+        }
+        Relationships: []
+      }
+      notification_delivery_attempts: {
+        Row: {
+          attempt_count: number
+          channel: string
+          created_at: string
+          delivered_at: string | null
+          id: string
+          last_error: string | null
+          notification_id: string
+          provider: string | null
+          scheduled_at: string | null
+          status: string
+        }
+        Insert: {
+          attempt_count?: number
+          channel: string
+          created_at?: string
+          delivered_at?: string | null
+          id?: string
+          last_error?: string | null
+          notification_id: string
+          provider?: string | null
+          scheduled_at?: string | null
+          status?: string
+        }
+        Update: {
+          attempt_count?: number
+          channel?: string
+          created_at?: string
+          delivered_at?: string | null
+          id?: string
+          last_error?: string | null
+          notification_id?: string
+          provider?: string | null
+          scheduled_at?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_delivery_attempts_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_events_log: {
+        Row: {
+          created_at: string
+          dedupe_key: string | null
+          error_code: string | null
+          error_message: string | null
+          event_type: string | null
+          id: string
+          ip_hash: string | null
+          normalized_notification_id: string | null
+          raw_payload: Json | null
+          request_id: string | null
+          source_id: string | null
+          status: string
+          status_code: number
+          tenant_id: string
+          user_agent: string | null
+        }
+        Insert: {
+          created_at?: string
+          dedupe_key?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          event_type?: string | null
+          id?: string
+          ip_hash?: string | null
+          normalized_notification_id?: string | null
+          raw_payload?: Json | null
+          request_id?: string | null
+          source_id?: string | null
+          status: string
+          status_code: number
+          tenant_id?: string
+          user_agent?: string | null
+        }
+        Update: {
+          created_at?: string
+          dedupe_key?: string | null
+          error_code?: string | null
+          error_message?: string | null
+          event_type?: string | null
+          id?: string
+          ip_hash?: string | null
+          normalized_notification_id?: string | null
+          raw_payload?: Json | null
+          request_id?: string | null
+          source_id?: string | null
+          status?: string
+          status_code?: number
+          tenant_id?: string
+          user_agent?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_events_log_normalized_notification_id_fkey"
+            columns: ["normalized_notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notification_events_log_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "notification_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_jobs: {
+        Row: {
+          attempts: number
+          created_at: string
+          id: string
+          job_type: string
+          last_error: string | null
+          max_attempts: number
+          notification_id: string | null
+          payload: Json | null
+          run_at: string
+          status: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          job_type: string
+          last_error?: string | null
+          max_attempts?: number
+          notification_id?: string | null
+          payload?: Json | null
+          run_at?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Update: {
+          attempts?: number
+          created_at?: string
+          id?: string
+          job_type?: string
+          last_error?: string | null
+          max_attempts?: number
+          notification_id?: string | null
+          payload?: Json | null
+          run_at?: string
+          status?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_jobs_notification_id_fkey"
+            columns: ["notification_id"]
+            isOneToOne: false
+            referencedRelation: "notifications"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_preferences: {
+        Row: {
+          global: Json
+          id: string
+          recipient_user_id: string | null
+          tenant_id: string
+          updated_at: string
+          workflows: Json
+        }
+        Insert: {
+          global: Json
+          id?: string
+          recipient_user_id?: string | null
+          tenant_id?: string
+          updated_at?: string
+          workflows?: Json
+        }
+        Update: {
+          global?: Json
+          id?: string
+          recipient_user_id?: string | null
+          tenant_id?: string
+          updated_at?: string
+          workflows?: Json
+        }
+        Relationships: []
+      }
+      notification_sources: {
+        Row: {
+          active: boolean
+          bearer_token_hash: string | null
+          created_at: string
+          domain: string
+          hmac_enabled: boolean
+          hmac_secret_env_name: string | null
+          id: string
+          last_seen_at: string | null
+          name: string
+          rate_limit_per_minute: number
+          source_key: string
+          source_type: string
+          tenant_id: string
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          bearer_token_hash?: string | null
+          created_at?: string
+          domain: string
+          hmac_enabled?: boolean
+          hmac_secret_env_name?: string | null
+          id?: string
+          last_seen_at?: string | null
+          name: string
+          rate_limit_per_minute?: number
+          source_key: string
+          source_type?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          bearer_token_hash?: string | null
+          created_at?: string
+          domain?: string
+          hmac_enabled?: boolean
+          hmac_secret_env_name?: string | null
+          id?: string
+          last_seen_at?: string | null
+          name?: string
+          rate_limit_per_minute?: number
+          source_key?: string
+          source_type?: string
+          tenant_id?: string
+          updated_at?: string
+        }
+        Relationships: []
+      }
+      notifications: {
+        Row: {
+          actions: Json | null
+          avatar_url: string | null
+          body: string
+          category: string
+          channels: string[]
+          created_at: string
+          dedupe_key: string | null
+          event_type: string | null
+          id: string
+          raw: Json | null
+          read: boolean
+          read_at: string | null
+          recipient_user_id: string | null
+          severity: string
+          source: string
+          source_id: string | null
+          status: string
+          subject: string | null
+          tenant_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          actions?: Json | null
+          avatar_url?: string | null
+          body: string
+          category: string
+          channels?: string[]
+          created_at?: string
+          dedupe_key?: string | null
+          event_type?: string | null
+          id?: string
+          raw?: Json | null
+          read?: boolean
+          read_at?: string | null
+          recipient_user_id?: string | null
+          severity?: string
+          source: string
+          source_id?: string | null
+          status?: string
+          subject?: string | null
+          tenant_id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          actions?: Json | null
+          avatar_url?: string | null
+          body?: string
+          category?: string
+          channels?: string[]
+          created_at?: string
+          dedupe_key?: string | null
+          event_type?: string | null
+          id?: string
+          raw?: Json | null
+          read?: boolean
+          read_at?: string | null
+          recipient_user_id?: string | null
+          severity?: string
+          source?: string
+          source_id?: string | null
+          status?: string
+          subject?: string | null
+          tenant_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_source_id_fkey"
+            columns: ["source_id"]
+            isOneToOne: false
+            referencedRelation: "notification_sources"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      supcloud_keepalive: {
+        Row: {
+          id: number
+          marker: string
+        }
+        Insert: {
+          id: number
+          marker?: string
+        }
+        Update: {
+          id?: number
+          marker?: string
+        }
+        Relationships: []
+      }
+      user_roles: {
+        Row: {
+          created_at: string
+          id: string
+          role: Database["public"]["Enums"]["app_role"]
+          tenant_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          tenant_id?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role?: Database["public"]["Enums"]["app_role"]
+          tenant_id?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
@@ -23,7 +421,7 @@ export type Database = {
       [_ in never]: never
     }
     Enums: {
-      [_ in never]: never
+      app_role: "admin" | "operator" | "viewer"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -150,6 +548,8 @@ export type CompositeTypes<
 
 export const Constants = {
   public: {
-    Enums: {},
+    Enums: {
+      app_role: ["admin", "operator", "viewer"],
+    },
   },
 } as const
