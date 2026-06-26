@@ -114,8 +114,8 @@ export async function getPreferences(): Promise<NotificationPreferences> {
   if (error) throw new Error(error.message);
   if (!data) return DEFAULT_PREFS;
   return {
-    global: data.global as NotificationPreferences["global"],
-    workflows: (data.workflows as NotificationPreferences["workflows"]) ?? [],
+    global: data.global as unknown as NotificationPreferences["global"],
+    workflows: (data.workflows as unknown as NotificationPreferences["workflows"]) ?? [],
   };
 }
 
