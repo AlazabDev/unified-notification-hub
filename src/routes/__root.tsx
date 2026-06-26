@@ -100,6 +100,11 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
         name: "twitter:description",
         content: "مركز إشعارات موحد يعمل على Edge Runtime",
       },
+      { name: "description", content: "Alazab Notification Hub" },
+      { property: "og:description", content: "Alazab Notification Hub" },
+      { name: "twitter:description", content: "Alazab Notification Hub" },
+      { property: "og:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/c3e5d6c6-14e0-4613-83ef-60c0ab29abe8" },
+      { name: "twitter:image", content: "https://storage.googleapis.com/gpt-engineer-file-uploads/attachments/og-images/c3e5d6c6-14e0-4613-83ef-60c0ab29abe8" },
     ],
     links: [
       {
