@@ -102,7 +102,7 @@ export function normalize(input: IngestPayload): UnifiedNotification {
     read: false,
     raw: input.payload,
     channels: ["inapp"],
-  };
+  } as UnifiedNotification;
 }
 
 function autoTitle(input: IngestPayload): string | undefined {
