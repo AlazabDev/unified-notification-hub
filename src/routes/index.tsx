@@ -204,6 +204,14 @@ function Dashboard() {
             total={items.length}
             onSendDemo={sendDemo}
             sending={ingestMut.isPending}
+            soundEnabled={sound.enabled}
+            onToggleSound={() => sound.setEnabled(!sound.enabled)}
+            soundKey={sound.soundKey}
+            onChangeSound={(k) => {
+              sound.setSoundKey(k);
+              setTimeout(() => sound.play(), 50);
+            }}
+            onTestSound={() => sound.play()}
           />
 
           {view === "inbox" ? (
