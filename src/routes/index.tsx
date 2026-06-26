@@ -283,11 +283,21 @@ function Hero({
   total,
   onSendDemo,
   sending,
+  soundEnabled,
+  onToggleSound,
+  soundKey,
+  onChangeSound,
+  onTestSound,
 }: {
   unread: number;
   total: number;
   onSendDemo: () => void;
   sending: boolean;
+  soundEnabled: boolean;
+  onToggleSound: () => void;
+  soundKey: SoundKey;
+  onChangeSound: (k: SoundKey) => void;
+  onTestSound: () => void;
 }) {
   return (
     <section className="relative overflow-hidden rounded-2xl border bg-card p-6 md:p-8">
@@ -306,9 +316,44 @@ function Hero({
             ثم Channel gateways. الواجهة تحدّث نفسها لحظياً.
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           <Stat label="غير مقروء" value={unread} highlight />
           <Stat label="الإجمالي" value={total} />
+          <div className="flex items-center gap-1 rounded-xl border bg-background px-2 py-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggleSound}
+              title={soundEnabled ? "كتم الصوت" : "تفعيل الصوت"}
+              className="h-8 w-8"
+            >
+              {soundEnabled ? (
+                <Volume2 className="h-4 w-4 text-primary" />
+              ) : (
+                <VolumeX className="h-4 w-4 text-muted-foreground" />
+              )}
+            </Button>
+            <select
+              value={soundKey}
+              onChange={(e) => onChangeSound(e.target.value as SoundKey)}
+              className="bg-transparent text-xs outline-none"
+              title="اختر نغمة الإشعار"
+            >
+              {SOUND_OPTIONS.map((s) => (
+                <option key={s.key} value={s.key}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onTestSound}
+              className="h-8 px-2 text-xs"
+            >
+              تجربة
+            </Button>
+          </div>
           <Button onClick={onSendDemo} disabled={sending} className="gap-2">
             <BellRing className="h-4 w-4" />
             {sending ? "..." : "إشعار تجريبي"}
