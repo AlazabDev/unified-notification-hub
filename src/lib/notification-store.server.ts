@@ -1,4 +1,12 @@
+/**
+ * SERVER-ONLY notification store backed by Supabase.
+ * Uses the service-role admin client (RLS bypassed) because all access is
+ * brokered through TanStack server functions.
+ */
+
+import { supabaseAdmin } from "@/integrations/supabase/client.server";
 import type {
+  NotificationAction,
   NotificationPreferences,
   UnifiedNotification,
 } from "@/types/notification";
@@ -13,126 +21,125 @@ import {
   persistReadState,
 } from "./notification-persistence.server";
 
-const fallbackStore: UnifiedNotification[] = seed();
-let fallbackPreferences: NotificationPreferences = defaultPreferences();
+type Row = {
+  id: string;
+  source: string;
+  category: string;
+  severity: string;
+  title: string;
+  body: string;
+  subject: string | null;
+  avatar_url: string | null;
+  actions: unknown;
+  channels: string[];
+  raw: unknown;
+  read: boolean;
+  created_at: string;
+};
+
+function rowToNotification(r: Row): UnifiedNotification {
+  return {
+    id: r.id,
+    source: r.source as UnifiedNotification["source"],
+    category: r.category as UnifiedNotification["category"],
+    severity: r.severity as UnifiedNotification["severity"],
+    title: r.title,
+    body: r.body,
+    subject: r.subject ?? undefined,
+    avatarUrl: r.avatar_url ?? undefined,
+    actions: (r.actions as NotificationAction[] | null) ?? undefined,
+    channels: (r.channels as UnifiedNotification["channels"]) ?? ["inapp"],
+    raw: (r.raw as UnifiedNotification["raw"]) ?? undefined,
+    read: r.read,
+    createdAt: r.created_at,
+  };
+}
 
 export async function listNotifications(): Promise<UnifiedNotification[]> {
-  const rows = await listPersistedNotifications();
-  return rows.length ? rows : [...fallbackStore].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  const { data, error } = await supabaseAdmin
+    .from("notifications")
+    .select(
+      "id, source, category, severity, title, body, subject, avatar_url, actions, channels, raw, read, created_at",
+    )
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (error) throw new Error(error.message);
+  return (data as Row[]).map(rowToNotification);
 }
 
-export async function addNotification(n: UnifiedNotification) {
-  const result = await persistNotification(n);
-  if (!result.ok && result.reason === "not_configured") {
-    fallbackStore.unshift(n);
-    if (fallbackStore.length > 500) fallbackStore.length = 500;
-  }
+export async function addNotification(n: UnifiedNotification): Promise<void> {
+  const { error } = await supabaseAdmin.from("notifications").insert({
+    id: n.id,
+    source: n.source,
+    category: n.category,
+    severity: n.severity,
+    title: n.title,
+    body: n.body,
+    subject: n.subject ?? null,
+    avatar_url: n.avatarUrl ?? null,
+    actions: (n.actions ?? null) as never,
+    channels: n.channels ?? ["inapp"],
+    raw: (n.raw ?? null) as never,
+    read: n.read ?? false,
+    created_at: n.createdAt,
+  });
+  if (error) throw new Error(error.message);
 }
 
-export async function markRead(id: string, read: boolean) {
-  const result = await persistReadState(id, read);
-  if (!result.ok && result.reason === "not_configured") {
-    const n = fallbackStore.find((x) => x.id === id);
-    if (n) n.read = read;
-  }
+export async function markRead(id: string, read: boolean): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("notifications")
+    .update({ read, read_at: read ? new Date().toISOString() : null })
+    .eq("id", id);
+  if (error) throw new Error(error.message);
 }
 
-export async function markAllRead() {
-  const result = await persistAllRead();
-  if (!result.ok && result.reason === "not_configured") {
-    fallbackStore.forEach((n) => (n.read = true));
-  }
+export async function markAllRead(): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("notifications")
+    .update({ read: true, read_at: new Date().toISOString() })
+    .eq("read", false);
+  if (error) throw new Error(error.message);
 }
 
-export async function removeNotification(id: string) {
-  const result = await deleteNotification(id);
-  if (!result.ok && result.reason === "not_configured") {
-    const i = fallbackStore.findIndex((x) => x.id === id);
-    if (i >= 0) fallbackStore.splice(i, 1);
-  }
+export async function removeNotification(id: string): Promise<void> {
+  const { error } = await supabaseAdmin
+    .from("notifications")
+    .delete()
+    .eq("id", id);
+  if (error) throw new Error(error.message);
 }
+
+const DEFAULT_PREFS: NotificationPreferences = {
+  global: { inapp: true, email: true, push: true, chat: false, sms: false },
+  workflows: [],
+};
 
 export async function getPreferences(): Promise<NotificationPreferences> {
-  return getPersistedPreferences().catch(() => fallbackPreferences);
+  const { data, error } = await supabaseAdmin
+    .from("notification_preferences")
+    .select("global, workflows")
+    .eq("id", "global")
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data) return DEFAULT_PREFS;
+  return {
+    global: data.global as unknown as NotificationPreferences["global"],
+    workflows: (data.workflows as unknown as NotificationPreferences["workflows"]) ?? [],
+  };
 }
 
-export async function savePreferences(p: NotificationPreferences) {
-  const result = await persistPreferences(p);
-  if (!result.ok && result.reason === "not_configured") {
-    fallbackPreferences = p;
-  }
-}
-
-/* -------------------------------------------------------------------------- */
-function seed(): UnifiedNotification[] {
-  const now = Date.now();
-  const at = (mins: number) => new Date(now - mins * 60_000).toISOString();
-  return [
+export async function savePreferences(
+  p: NotificationPreferences,
+): Promise<void> {
+  const { error } = await supabaseAdmin.from("notification_preferences").upsert(
     {
-      id: "seed-1",
-      tenantId: "default",
-      source: "meta",
-      category: "projects",
-      severity: "info",
-      title: "Joe requested to view Q4 2024 report.",
-      body: "joe@acme.co requested view access to Q4 2024 report.",
-      subject: "joe@acme.co",
-      createdAt: at(3),
-      read: false,
-      avatarUrl:
-        "https://api.dicebear.com/9.x/notionists/svg?seed=joe&backgroundColor=c0aede",
-      actions: [
-        { id: "approve", label: "Approve", variant: "primary", actionKey: "approve" },
-        { id: "deny", label: "Deny", variant: "secondary", actionKey: "deny" },
-      ],
-      channels: ["inapp", "email"],
+      id: "global",
+      global: p.global as never,
+      workflows: p.workflows as never,
+      updated_at: new Date().toISOString(),
     },
-    {
-      id: "seed-2",
-      tenantId: "default",
-      source: "uberfix",
-      category: "projects",
-      severity: "info",
-      title: "2 new comments from Radek and Dima",
-      body: "You have 2 new comments from Radek and Dima on the Untitled figma file in Digest Project.",
-      subject: "Digest Project",
-      createdAt: at(60 * 24),
-      read: false,
-      avatarUrl:
-        "https://api.dicebear.com/9.x/notionists/svg?seed=radek&backgroundColor=b6e3f4",
-      actions: [
-        { id: "open", label: "Take me there", variant: "primary", actionKey: "open" },
-      ],
-      channels: ["inapp", "push"],
-    },
-    {
-      id: "seed-3",
-      tenantId: "default",
-      source: "accounting",
-      category: "alerts",
-      severity: "warning",
-      title: "Your account is pending verification.",
-      body: "steve@acme.co is pending verification, please verify your account to protect against fraud and abuse.",
-      subject: "steve@acme.co",
-      createdAt: at(60 * 24 * 5),
-      read: true,
-      actions: [
-        { id: "verify", label: "Verify now", variant: "primary", actionKey: "verify" },
-        { id: "later", label: "Remind me later", variant: "secondary", actionKey: "later" },
-      ],
-      channels: ["inapp", "email", "sms"],
-    },
-    {
-      id: "seed-4",
-      tenantId: "default",
-      source: "system",
-      category: "announcements",
-      severity: "success",
-      title: "Az Notification Hub جاهز",
-      body: "تم تركيب طبقة الاستقبال (Ingestion API). جرّب POST /api/ingest لإرسال إشعار جديد.",
-      createdAt: at(60 * 24 * 7),
-      read: true,
-      channels: ["inapp"],
-    },
-  ];
+    { onConflict: "id" },
+  );
+  if (error) throw new Error(error.message);
 }

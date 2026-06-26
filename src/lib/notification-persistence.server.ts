@@ -1,49 +1,57 @@
-import type {
-  NotificationPreferences,
-  UnifiedNotification,
-} from "@/types/notification";
-
-const DEFAULT_TENANT_ID = "default";
-const DEFAULT_RECIPIENT_ID = "dashboard";
+import type { JsonValue, UnifiedNotification } from "@/types/notification";
+import { getServerEnv, isEnabledEnv } from "./env.server";
 
 export type PersistenceResult =
-  | { ok: true }
-  | { ok: false; reason: "not_configured" | "failed"; error?: string };
+  | { persisted: true }
+  | { persisted: false; reason: "not_configured" | "failed"; error?: string };
 
-type SupabaseConfig = {
-  url: string;
-  key: string;
+export type EventLogInput = {
+  tenantId?: string;
+  sourceId?: string;
+  requestId?: string;
+  dedupeKey?: string;
+  eventType?: string;
+  status: "accepted" | "rejected" | "duplicate" | "failed";
+  statusCode: number;
+  errorCode?: string;
+  errorMessage?: string;
+  ipHash?: string;
+  userAgent?: string;
+  rawPayload?: JsonValue;
+  notificationId?: string;
 };
 
-type ProcessLike = {
-  env?: Record<string, string | undefined>;
-};
+function getSupabaseConfig() {
+  const supabaseUrl = getServerEnv("SUPABASE_URL")?.replace(/\/$/, "");
+  const serviceKey = getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
 
-function env(name: string): string | undefined {
-  return (globalThis as unknown as { process?: ProcessLike }).process?.env?.[name];
+  if (!supabaseUrl || !serviceKey) {
+    if (isEnabledEnv("REQUIRE_SUPABASE")) {
+      throw new Error(
+        "Supabase persistence is required but SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.",
+      );
+    }
+    return undefined;
+  }
+
+  return { supabaseUrl, serviceKey };
 }
 
-function config(): SupabaseConfig | undefined {
-  const url = env("SUPABASE_URL")?.replace(/\/$/, "");
-  const key = env("SUPABASE_SERVICE_ROLE_KEY");
-  if (!url || !key) return undefined;
-  return { url, key };
-}
-
-function headers(key: string, prefer = "return=minimal") {
+function headers(serviceKey: string, prefer = "return=minimal") {
   return {
-    apikey: key,
-    authorization: `Bearer ${key}`,
+    apikey: serviceKey,
+    authorization: `Bearer ${serviceKey}`,
     "content-type": "application/json",
     prefer,
   };
 }
 
-function toNotificationRow(notification: UnifiedNotification) {
+function toSupabaseRow(notification: UnifiedNotification) {
+  const withSource = notification as UnifiedNotification & { sourceId?: string };
   return {
     id: notification.id,
-    tenant_id: notification.tenantId ?? DEFAULT_TENANT_ID,
-    source_id: notification.sourceId ?? null,
+    tenant_id: notification.tenantId ?? "default",
+    source_id: withSource.sourceId ?? null,
     recipient_user_id: notification.recipientUserId ?? null,
     source: notification.source,
     event_type: notification.eventType ?? null,
@@ -62,199 +70,80 @@ function toNotificationRow(notification: UnifiedNotification) {
   };
 }
 
-type NotificationRow = {
-  id: string;
-  tenant_id?: string | null;
-  source_id?: string | null;
-  recipient_user_id?: string | null;
-  source: UnifiedNotification["source"];
-  event_type?: string | null;
-  dedupe_key?: string | null;
-  category: UnifiedNotification["category"];
-  severity: UnifiedNotification["severity"];
-  title: string;
-  body: string;
-  subject?: string | null;
-  avatar_url?: string | null;
-  actions?: UnifiedNotification["actions"] | null;
-  channels?: UnifiedNotification["channels"] | null;
-  raw?: UnifiedNotification["raw"] | null;
-  read: boolean;
-  created_at: string;
-};
-
-function fromNotificationRow(row: NotificationRow): UnifiedNotification {
-  return {
-    id: row.id,
-    tenantId: row.tenant_id ?? undefined,
-    sourceId: row.source_id ?? undefined,
-    recipientUserId: row.recipient_user_id ?? undefined,
-    source: row.source,
-    eventType: row.event_type ?? undefined,
-    dedupeKey: row.dedupe_key ?? undefined,
-    category: row.category,
-    severity: row.severity,
-    title: row.title,
-    body: row.body,
-    subject: row.subject ?? undefined,
-    avatarUrl: row.avatar_url ?? undefined,
-    actions: row.actions ?? undefined,
-    channels: row.channels ?? undefined,
-    raw: row.raw ?? undefined,
-    read: row.read,
-    createdAt: row.created_at,
-  };
-}
-
-async function selectRows<T>(table: string, query: string): Promise<T[] | undefined> {
-  const c = config();
-  if (!c) return undefined;
-
-  const response = await fetch(`${c.url}/rest/v1/${table}?${query}`, {
-    method: "GET",
-    headers: headers(c.key),
-  });
-
-  if (!response.ok) {
-    throw new Error(await response.text());
-  }
-
-  return response.json() as Promise<T[]>;
-}
-
 async function insertRow(table: string, row: unknown): Promise<PersistenceResult> {
-  const c = config();
-  if (!c) return { ok: false, reason: "not_configured" };
+  const config = getSupabaseConfig();
+  if (!config) return { persisted: false, reason: "not_configured" };
 
-  const response = await fetch(`${c.url}/rest/v1/${table}`, {
-    method: "POST",
-    headers: headers(c.key),
-    body: JSON.stringify(row),
-  });
+  try {
+    const response = await fetch(`${config.supabaseUrl}/rest/v1/${table}`, {
+      method: "POST",
+      headers: headers(config.serviceKey),
+      body: JSON.stringify(row),
+    });
 
-  if (!response.ok) {
-    return { ok: false, reason: "failed", error: await response.text() };
+    if (!response.ok) {
+      const text = await response.text().catch(() => "");
+      return {
+        persisted: false,
+        reason: "failed",
+        error: text || `Supabase returned ${response.status}`,
+      };
+    }
+
+    return { persisted: true };
+  } catch (error) {
+    return {
+      persisted: false,
+      reason: "failed",
+      error: error instanceof Error ? error.message : String(error),
+    };
   }
-
-  return { ok: true };
 }
 
-async function patchRows(
-  table: string,
-  query: string,
-  row: unknown,
-): Promise<PersistenceResult> {
-  const c = config();
-  if (!c) return { ok: false, reason: "not_configured" };
-
-  const response = await fetch(`${c.url}/rest/v1/${table}?${query}`, {
-    method: "PATCH",
-    headers: headers(c.key),
-    body: JSON.stringify(row),
-  });
-
-  if (!response.ok) {
-    return { ok: false, reason: "failed", error: await response.text() };
-  }
-
-  return { ok: true };
-}
-
-async function deleteRows(table: string, query: string): Promise<PersistenceResult> {
-  const c = config();
-  if (!c) return { ok: false, reason: "not_configured" };
-
-  const response = await fetch(`${c.url}/rest/v1/${table}?${query}`, {
-    method: "DELETE",
-    headers: headers(c.key),
-  });
-
-  if (!response.ok) {
-    return { ok: false, reason: "failed", error: await response.text() };
-  }
-
-  return { ok: true };
-}
-
-export async function listPersistedNotifications(): Promise<UnifiedNotification[]> {
-  const rows = await selectRows<NotificationRow>(
-    "notifications",
-    "select=*&order=created_at.desc&limit=500",
-  );
-  return rows?.map(fromNotificationRow) ?? [];
-}
-
+/**
+ * Edge-safe persistence using Supabase PostgREST directly.
+ * It works in Cloudflare Workers because it only depends on standard fetch.
+ */
 export async function persistNotification(
   notification: UnifiedNotification,
 ): Promise<PersistenceResult> {
-  return insertRow("notifications", toNotificationRow(notification));
+  return insertRow("notifications", toSupabaseRow(notification));
 }
 
-export async function persistReadState(
-  id: string,
-  read: boolean,
-): Promise<PersistenceResult> {
-  return patchRows(
-    "notifications",
-    `id=eq.${encodeURIComponent(id)}`,
-    { read, read_at: read ? new Date().toISOString() : null },
-  );
-}
-
-export async function persistAllRead(): Promise<PersistenceResult> {
-  return patchRows(
-    "notifications",
-    "read=eq.false",
-    { read: true, read_at: new Date().toISOString() },
-  );
-}
-
-export async function deleteNotification(id: string): Promise<PersistenceResult> {
-  return deleteRows("notifications", `id=eq.${encodeURIComponent(id)}`);
-}
-
-export async function getPersistedPreferences(): Promise<NotificationPreferences> {
-  const rows = await selectRows<{
-    global: NotificationPreferences["global"];
-    workflows: NotificationPreferences["workflows"];
-  }>(
-    "notification_preferences",
-    `select=global,workflows&tenant_id=eq.${DEFAULT_TENANT_ID}&recipient_user_id=eq.${DEFAULT_RECIPIENT_ID}&limit=1`,
-  );
-
-  return rows?.[0] ?? defaultPreferences();
-}
-
-export async function persistPreferences(
-  preferences: NotificationPreferences,
-): Promise<PersistenceResult> {
-  return insertRow("notification_preferences", {
-    tenant_id: DEFAULT_TENANT_ID,
-    recipient_user_id: DEFAULT_RECIPIENT_ID,
-    global: preferences.global,
-    workflows: preferences.workflows,
+export async function logNotificationEvent(input: EventLogInput): Promise<PersistenceResult> {
+  return insertRow("notification_events_log", {
+    tenant_id: input.tenantId ?? "default",
+    source_id: input.sourceId ?? null,
+    request_id: input.requestId ?? null,
+    dedupe_key: input.dedupeKey ?? null,
+    event_type: input.eventType ?? null,
+    status: input.status,
+    status_code: input.statusCode,
+    error_code: input.errorCode ?? null,
+    error_message: input.errorMessage ?? null,
+    ip_hash: input.ipHash ?? null,
+    user_agent: input.userAgent ?? null,
+    raw_payload: input.rawPayload ?? null,
+    normalized_notification_id: input.notificationId ?? null,
   });
 }
 
-export function defaultPreferences(): NotificationPreferences {
-  return {
-    global: { inapp: true, email: true, push: true, chat: false, sms: false },
-    workflows: [
-      {
-        workflowId: "onboarding",
-        name: "Onboarding workflow",
-        channels: { inapp: true, email: true, push: true, chat: true, sms: true },
-      },
-      {
-        workflowId: "comment-mentions",
-        name: "Comment Mentions",
-        channels: { inapp: true, email: false, push: false, chat: false, sms: true },
-      },
-      {
-        workflowId: "invite-friend",
-        name: "Invite friend",
-        channels: { inapp: true, email: true, push: false, chat: true, sms: false },
-      },
-    ],
-  };
+export async function createDeliveryJob(
+  notification: UnifiedNotification,
+): Promise<PersistenceResult> {
+  return insertRow("notification_jobs", {
+    notification_id: notification.id,
+    tenant_id: notification.tenantId ?? "default",
+    job_type: "deliver",
+    status: "pending",
+    run_at: new Date().toISOString(),
+    attempts: 0,
+    max_attempts: 5,
+    payload: {
+      notificationId: notification.id,
+      channels: notification.channels ?? ["inapp"],
+      source: notification.source,
+      eventType: notification.eventType ?? null,
+    },
+  });
 }

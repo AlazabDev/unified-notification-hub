@@ -41,11 +41,14 @@ export interface NotificationAction {
 
 export interface UnifiedNotification {
   id: string;
+  /** Tenant/company partition. Default tenant is used until multi-company auth lands. */
   tenantId?: string;
-  sourceId?: string;
+  /** Optional recipient identity for RLS/realtime filtering. */
   recipientUserId?: string;
   source: NotificationSource;
+  /** Source event key, e.g. lead.new, ticket.assigned, invoice.overdue. */
   eventType?: string;
+  /** Optional idempotency key to prevent duplicate webhook inserts. */
   dedupeKey?: string;
   category: NotificationCategory;
   severity: NotificationSeverity;
