@@ -10,16 +10,6 @@ import type {
   NotificationPreferences,
   UnifiedNotification,
 } from "@/types/notification";
-import {
-  defaultPreferences,
-  deleteNotification,
-  getPersistedPreferences,
-  listPersistedNotifications,
-  persistAllRead,
-  persistNotification,
-  persistPreferences,
-  persistReadState,
-} from "./notification-persistence.server";
 
 type Row = {
   id: string;
