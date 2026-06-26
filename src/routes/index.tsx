@@ -81,8 +81,13 @@ function Dashboard() {
   const { data: items = [] } = useQuery({
     queryKey: ["notifications"],
     queryFn: () => listFn(),
-    refetchInterval: 5000,
+    refetchInterval: 15000,
   });
+
+  const onIncoming = useCallback(() => {
+    qc.invalidateQueries({ queryKey: ["notifications"] });
+  }, [qc]);
+  const sound = useNotificationSound(onIncoming);
 
   const filtered = useMemo(() => {
     if (tab === "all") return items;
