@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   Bell,
   BellRing,
@@ -16,11 +16,14 @@ import {
   Smartphone,
   Sparkles,
   Trash2,
+  Volume2,
+  VolumeX,
   Zap,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
 import { Toaster, toast } from "sonner";
+import { useNotificationSound, SOUND_OPTIONS, type SoundKey } from "@/hooks/useNotificationSound";
 
 import {
   getPreferencesFn,
