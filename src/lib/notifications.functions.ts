@@ -25,8 +25,35 @@ const preferencesSchema = z.object({
   ),
 });
 
+const SAFE_DEFAULT_PREFS: NotificationPreferences = {
+  global: { inapp: true, email: true, push: false, chat: false, sms: false },
+  workflows: [],
+};
+
+/**
+ * Emergency production guard.
+ *
+ * TanStack Server Functions are callable RPC endpoints. Until dashboard auth is
+ * wired to Supabase sessions, these functions must not broker service-role
+ * access for anonymous users. Keep them locked by default and only unlock in a
+ * trusted local/staging environment with ALLOW_UNAUTHENTICATED_DASHBOARD=true.
+ */
+function allowUnauthenticatedDashboard(): boolean {
+  return process.env.ALLOW_UNAUTHENTICATED_DASHBOARD === "true";
+}
+
+function requireDashboardAccess(): void {
+  if (!allowUnauthenticatedDashboard()) {
+    throw new Error(
+      "Notification dashboard server functions are locked until Supabase auth is configured.",
+    );
+  }
+}
+
 export const listNotificationsFn = createServerFn({ method: "GET" }).handler(
   async (): Promise<UnifiedNotification[]> => {
+    if (!allowUnauthenticatedDashboard()) return [];
+
     const { listNotifications } = await import("./notification-store.server");
     return listNotifications();
   },
@@ -35,6 +62,8 @@ export const listNotificationsFn = createServerFn({ method: "GET" }).handler(
 export const ingestNotificationFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => ingestSchema.parse(d))
   .handler(async ({ data }): Promise<UnifiedNotification> => {
+    requireDashboardAccess();
+
     const { addNotification } = await import("./notification-store.server");
     const n = normalize(data);
     await addNotification(n);
@@ -46,6 +75,8 @@ export const markReadFn = createServerFn({ method: "POST" })
     z.object({ id: z.string(), read: z.boolean().default(true) }).parse(d),
   )
   .handler(async ({ data }) => {
+    requireDashboardAccess();
+
     const { markRead } = await import("./notification-store.server");
     await markRead(data.id, data.read);
     return { ok: true };
@@ -53,6 +84,8 @@ export const markReadFn = createServerFn({ method: "POST" })
 
 export const markAllReadFn = createServerFn({ method: "POST" }).handler(
   async () => {
+    requireDashboardAccess();
+
     const { markAllRead } = await import("./notification-store.server");
     await markAllRead();
     return { ok: true };
@@ -62,6 +95,8 @@ export const markAllReadFn = createServerFn({ method: "POST" }).handler(
 export const removeNotificationFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data }) => {
+    requireDashboardAccess();
+
     const { removeNotification } = await import("./notification-store.server");
     await removeNotification(data.id);
     return { ok: true };
@@ -69,6 +104,8 @@ export const removeNotificationFn = createServerFn({ method: "POST" })
 
 export const getPreferencesFn = createServerFn({ method: "GET" }).handler(
   async (): Promise<NotificationPreferences> => {
+    if (!allowUnauthenticatedDashboard()) return SAFE_DEFAULT_PREFS;
+
     const { getPreferences } = await import("./notification-store.server");
     return getPreferences();
   },
@@ -77,6 +114,8 @@ export const getPreferencesFn = createServerFn({ method: "GET" }).handler(
 export const savePreferencesFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => preferencesSchema.parse(d))
   .handler(async ({ data }) => {
+    requireDashboardAccess();
+
     const { savePreferences } = await import("./notification-store.server");
     await savePreferences(data);
     return { ok: true };
