@@ -42,20 +42,29 @@ const FIVE_MINUTES_MS = 5 * 60 * 1000;
 function getBearerToken(request: Request): string | undefined {
   const authorization = request.headers.get("authorization") ?? "";
   const match = authorization.match(/^Bearer\s+(.+)$/i);
-  return match?.[1]?.trim();
+  if (match?.[1]?.trim()) return match[1].trim();
+
+  const apiKeyHeader = request.headers.get("x-api-key")?.trim();
+  if (apiKeyHeader) return apiKeyHeader;
+
+  const url = new URL(request.url);
+  return url.searchParams.get("token")?.trim() || url.searchParams.get("api_key")?.trim() || undefined;
 }
 
 function jsonHeaders(token: string) {
-  return {
+  const headers: Record<string, string> = {
     apikey: token,
-    authorization: `Bearer ${token}`,
     "content-type": "application/json",
   };
+  if (!token.startsWith("sb_secret_") && !token.startsWith("sb_publishable_")) {
+    headers.authorization = `Bearer ${token}`;
+  }
+  return headers;
 }
 
 async function findSourceByTokenHash(tokenHash: string): Promise<SourceRow | undefined> {
   const url = getServerEnv("SUPABASE_URL")?.replace(/\/$/, "");
-  const key = getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const key = getServerEnv("AZ_SUPABASE_SERVICE_ROLE_KEY") ?? getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !key) return undefined;
 
   const query = new URLSearchParams({
@@ -79,7 +88,7 @@ async function findSourceByTokenHash(tokenHash: string): Promise<SourceRow | und
 
 async function touchSourceLastSeen(sourceId: string) {
   const url = getServerEnv("SUPABASE_URL")?.replace(/\/$/, "");
-  const key = getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const key = getServerEnv("AZ_SUPABASE_SERVICE_ROLE_KEY") ?? getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
   if (!url || !key) return;
 
   const query = new URLSearchParams({ id: `eq.${sourceId}` });

@@ -9,6 +9,24 @@ import {
 import { enqueueNotificationReceived } from "@/lib/notification-queue.server";
 import type { UnifiedNotification } from "@/types/notification";
 
+const corsHeaders = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers":
+    "authorization, content-type, x-request-id, x-api-key, x-azab-signature, x-azab-timestamp",
+  "access-control-max-age": "86400",
+};
+
+function withCors(response: Response): Response {
+  const headers = new Headers(response.headers);
+  Object.entries(corsHeaders).forEach(([key, value]) => headers.set(key, value));
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
 const errorMessages: Record<string, { ar: string; en: string }> = {
   missing_token: {
     ar: "مفتاح الوصول غير موجود.",
@@ -58,7 +76,7 @@ function jsonError(code: string, status: number, extra?: Record<string, unknown>
     en: "An error occurred while processing the request.",
   };
 
-  return Response.json(
+  return withCors(Response.json(
     {
       ok: false,
       error: code,
@@ -67,7 +85,7 @@ function jsonError(code: string, status: number, extra?: Record<string, unknown>
       ...extra,
     },
     { status },
-  );
+  ));
 }
 
 /**
@@ -80,6 +98,7 @@ function jsonError(code: string, status: number, extra?: Record<string, unknown>
 export const Route = createFileRoute("/api/public/ingest")({
   server: {
     handlers: {
+      OPTIONS: async () => new Response(null, { status: 204, headers: corsHeaders }),
       POST: async ({ request }) => {
         const requestId = request.headers.get("x-request-id") ?? crypto.randomUUID();
 
@@ -140,13 +159,6 @@ export const Route = createFileRoute("/api/public/ingest")({
         }) as UnifiedNotification & { sourceId?: string };
         notification.sourceId = auth.source.id;
 
-        const { addNotification } = await import(
-          "@/lib/notification-store.server"
-        );
-
-        // Transitional UI support. Supabase is the intended source of truth.
-        addNotification(notification);
-
         const [persistence, job, queue] = await Promise.all([
           persistNotification(notification),
           createDeliveryJob(notification),
@@ -174,7 +186,7 @@ export const Route = createFileRoute("/api/public/ingest")({
           notificationId: notification.id,
         });
 
-        return Response.json(
+        return withCors(Response.json(
           {
             ok: true,
             requestId,
@@ -185,10 +197,10 @@ export const Route = createFileRoute("/api/public/ingest")({
             queue,
           },
           { status: 201 },
-        );
+        ));
       },
       GET: async () =>
-        Response.json({
+        withCors(Response.json({
           name: "Az Notification Hub — Edge Ingestion API",
           method: "POST",
           auth: "Authorization: Bearer <SOURCE_TOKEN>",
@@ -217,7 +229,7 @@ export const Route = createFileRoute("/api/public/ingest")({
             actions: "[{id,label,variant?,href?,actionKey?}]",
             payload: "record?",
           },
-        }),
+        })),
     },
   },
 });

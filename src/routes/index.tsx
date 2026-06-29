@@ -1,17 +1,23 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useMemo, useState, type ReactNode } from "react";
 import {
   Bell,
   BellRing,
-  Check,
   CheckCheck,
   ChevronDown,
+  Code2,
+  Copy,
+  ExternalLink,
+  Globe2,
   Inbox as InboxIcon,
+  KeyRound,
   Mail,
   MessageSquare,
   MoreHorizontal,
+  RefreshCw,
+  ShieldCheck,
   Settings as SettingsIcon,
   Smartphone,
   Sparkles,
@@ -19,6 +25,7 @@ import {
   Volume2,
   VolumeX,
   Zap,
+  Activity,
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
@@ -26,13 +33,16 @@ import { Toaster, toast } from "sonner";
 import { useNotificationSound, SOUND_OPTIONS, type SoundKey } from "@/hooks/useNotificationSound";
 
 import {
+  createSourceTokenFn,
   getPreferencesFn,
   ingestNotificationFn,
+  listNotificationSourcesFn,
   listNotificationsFn,
   markAllReadFn,
   markReadFn,
   removeNotificationFn,
   savePreferencesFn,
+  type NotificationSourceRow,
 } from "@/lib/notifications.functions";
 import type {
   NotificationCategory,
@@ -72,13 +82,15 @@ const sourceMeta: Record<
   custom: { label: "Custom", color: "bg-slate-500/10 text-slate-600 dark:text-slate-300" },
 };
 
+type DashboardView = "inbox" | "preferences" | "integrations";
+
 function Dashboard() {
   const [tab, setTab] = useState<NotificationCategory>("all");
-  const [view, setView] = useState<"inbox" | "preferences">("inbox");
+  const [view, setView] = useState<DashboardView>("inbox");
 
   const qc = useQueryClient();
   const listFn = useServerFn(listNotificationsFn);
-  const { data: items = [] } = useQuery({
+  const { data: items = [], error: notificationsError, isLoading: loadingNotifications } = useQuery({
     queryKey: ["notifications"],
     queryFn: () => listFn(),
     refetchInterval: 15000,
@@ -100,7 +112,12 @@ function Dashboard() {
     mutationFn: useServerFn(ingestNotificationFn),
     onSuccess: () => {
       toast.success("تم إرسال إشعار تجريبي");
-      qc.invalidateQueries({ queryKey: ["notifications"] });
+      void qc.invalidateQueries({ queryKey: ["notifications"] });
+    },
+    onError: (error) => {
+      toast.error("فشل إرسال الإشعار التجريبي", {
+        description: error instanceof Error ? error.message : "راجع إعدادات Supabase",
+      });
     },
   });
 
@@ -175,17 +192,25 @@ function Dashboard() {
             label="التفضيلات"
           />
           <SideItem
-            icon={<Zap className="h-4 w-4" />}
-            label="مفاتيح الـ API"
-            hint="قريباً"
-            disabled
+            active={view === "integrations"}
+            onClick={() => setView("integrations")}
+            icon={<KeyRound className="h-4 w-4" />}
+            label="الربط والـ Webhook"
           />
           <SideItem
+            active={view === "integrations"}
+            onClick={() => setView("integrations")}
             icon={<MessageSquare className="h-4 w-4" />}
             label="قنوات التسليم"
-            hint="قريباً"
-            disabled
           />
+          <Link
+            to="/status"
+            className="group flex w-full items-center gap-3 rounded-lg px-3 py-2 text-sm text-sidebar-foreground/80 transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+          >
+            <Activity className="h-4 w-4" />
+            <span className="flex-1 text-right">حالة النظام</span>
+            <ExternalLink className="h-3.5 w-3.5 text-sidebar-foreground/50" />
+          </Link>
 
           <div className="mt-auto rounded-xl bg-sidebar-accent p-3 text-xs text-sidebar-accent-foreground">
             <div className="mb-1 flex items-center gap-1 font-semibold">
@@ -214,21 +239,98 @@ function Dashboard() {
             onTestSound={() => sound.play()}
           />
 
+          <DashboardMobileNav view={view} setView={setView} unread={unread} />
+
+          {notificationsError && (
+            <ErrorBanner
+              title="تعذر تحميل الإشعارات من Supabase"
+              error={notificationsError}
+              hint="تأكد من وجود AZ_SUPABASE_SERVICE_ROLE_KEY في Secrets ومن تفعيل جداول Supabase."
+            />
+          )}
+
           {view === "inbox" ? (
             <InboxPanel
               items={filtered}
               tab={tab}
               setTab={setTab}
               unread={unread}
-              onChange={() =>
-                qc.invalidateQueries({ queryKey: ["notifications"] })
-              }
+              loading={loadingNotifications}
+              onOpenPreferences={() => setView("preferences")}
+              onChange={() => {
+                void qc.invalidateQueries({ queryKey: ["notifications"] });
+              }}
             />
-          ) : (
+          ) : view === "preferences" ? (
             <PreferencesPanel />
+          ) : (
+            <IntegrationsPanel />
           )}
         </main>
       </div>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+function DashboardMobileNav({
+  view,
+  setView,
+  unread,
+}: {
+  view: DashboardView;
+  setView: (view: DashboardView) => void;
+  unread: number;
+}) {
+  const items: Array<{ view: DashboardView; label: string; icon: ReactNode; badge?: number }> = [
+    { view: "inbox", label: "الوارد", icon: <InboxIcon className="h-4 w-4" />, badge: unread || undefined },
+    { view: "preferences", label: "الإعدادات", icon: <SettingsIcon className="h-4 w-4" /> },
+    { view: "integrations", label: "الربط", icon: <KeyRound className="h-4 w-4" /> },
+  ];
+
+  return (
+    <div className="grid grid-cols-4 gap-2 lg:hidden">
+      {items.map((item) => (
+        <button
+          key={item.view}
+          onClick={() => setView(item.view)}
+          className={cn(
+            "relative flex items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm transition-colors",
+            view === item.view
+              ? "border-primary/40 bg-primary text-primary-foreground"
+              : "bg-card text-muted-foreground hover:bg-muted",
+          )}
+        >
+          {item.icon}
+          <span>{item.label}</span>
+          {item.badge !== undefined && (
+            <span className="absolute -top-1 -right-1 rounded-full bg-destructive px-1.5 py-0.5 text-[10px] font-bold text-destructive-foreground">
+              {item.badge}
+            </span>
+          )}
+        </button>
+      ))}
+      <Button asChild variant="outline" className="rounded-xl">
+        <Link to="/status" className="gap-2">
+          <Activity className="h-4 w-4" />
+          الحالة
+        </Link>
+      </Button>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
+function ErrorBanner({ title, error, hint }: { title: string; error: unknown; hint?: string }) {
+  return (
+    <div className="rounded-2xl border border-destructive/30 bg-destructive/10 p-4 text-sm">
+      <div className="font-semibold text-destructive">{title}</div>
+      <p dir="ltr" className="mt-1 break-words text-left font-mono text-xs text-muted-foreground">
+        {error instanceof Error ? error.message : String(error)}
+      </p>
+      {hint && <p className="mt-2 text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
@@ -246,7 +348,7 @@ function SideItem({
 }: {
   active?: boolean;
   onClick?: () => void;
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   badge?: number;
   hint?: string;
@@ -397,12 +499,16 @@ function InboxPanel({
   tab,
   setTab,
   unread,
+  loading,
+  onOpenPreferences,
   onChange,
 }: {
   items: UnifiedNotification[];
   tab: NotificationCategory;
   setTab: (v: NotificationCategory) => void;
   unread: number;
+  loading?: boolean;
+  onOpenPreferences: () => void;
   onChange: () => void;
 }) {
   const markAllFn = useServerFn(markAllReadFn);
@@ -443,7 +549,7 @@ function InboxPanel({
           <Button variant="ghost" size="icon">
             <MoreHorizontal className="h-4 w-4" />
           </Button>
-          <Button variant="ghost" size="icon">
+          <Button variant="ghost" size="icon" onClick={onOpenPreferences} title="فتح الإعدادات">
             <SettingsIcon className="h-4 w-4" />
           </Button>
         </div>
@@ -463,7 +569,13 @@ function InboxPanel({
 
         <TabsContent value={tab} className="m-0">
           <ul className="inbox-scroll max-h-[600px] divide-y overflow-y-auto">
-            {items.length === 0 && (
+            {loading && items.length === 0 && (
+              <li className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
+                <RefreshCw className="h-8 w-8 animate-spin opacity-50" />
+                <p className="text-sm">جاري تحميل الإشعارات...</p>
+              </li>
+            )}
+            {!loading && items.length === 0 && (
               <li className="flex flex-col items-center gap-2 py-16 text-muted-foreground">
                 <InboxIcon className="h-10 w-10 opacity-40" />
                 <p className="text-sm">لا توجد إشعارات في هذه الفئة</p>
@@ -678,10 +790,328 @@ function ChannelIcon({
 
 /* -------------------------------------------------------------------------- */
 
+function IntegrationsPanel() {
+  const endpoint = "https://notify.alazab.com/api/public/ingest";
+  const listSourcesFn = useServerFn(listNotificationSourcesFn);
+  const createTokenFn = useServerFn(createSourceTokenFn);
+  const qc = useQueryClient();
+  const [generatedToken, setGeneratedToken] = useState<string | null>(null);
+  const [sourceForm, setSourceForm] = useState<{
+    name: string;
+    domain: string;
+    sourceKey: string;
+    sourceType: "meta" | "uberfix" | "accounting" | "system" | "custom";
+    rateLimitPerMinute: number;
+  }>({
+    name: "Internal Company Systems",
+    domain: "notify.alazab.com",
+    sourceKey: "company_internal",
+    sourceType: "custom" as const,
+    rateLimitPerMinute: 120,
+  });
+
+  const { data: sources = [], error: sourcesError, isLoading: loadingSources } = useQuery({
+    queryKey: ["notification-sources"],
+    queryFn: () => listSourcesFn(),
+  });
+
+  const createTokenMut = useMutation({
+    mutationFn: () => createTokenFn({ data: sourceForm }),
+    onSuccess: (result) => {
+      setGeneratedToken(result.token);
+      toast.success("تم إنشاء مفتاح الربط وتفعيل المصدر");
+      void qc.invalidateQueries({ queryKey: ["notification-sources"] });
+    },
+    onError: (error) => {
+      toast.error("فشل إنشاء مفتاح الربط", {
+        description: error instanceof Error ? error.message : "راجع جداول Supabase والصلاحيات",
+      });
+    },
+  });
+
+  const curlExample = `curl -X POST ${endpoint} \\
+  -H "Authorization: Bearer ${generatedToken ?? "YOUR_SOURCE_TOKEN"}" \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "source": "custom",
+    "eventType": "order.created",
+    "title": "طلب جديد #1001",
+    "body": "تم إنشاء طلب جديد ويحتاج متابعة.",
+    "severity": "info",
+    "category": "projects",
+    "payload": { "orderId": "1001" }
+  }'`;
+
+  const tsExample = `await fetch("${endpoint}", {
+  method: "POST",
+  headers: {
+    "Authorization": "Bearer ${generatedToken ?? "YOUR_SOURCE_TOKEN"}",
+    "Content-Type": "application/json",
+    "X-Request-Id": crypto.randomUUID()
+  },
+  body: JSON.stringify({
+    source: "custom",
+    eventType: "ticket.assigned",
+    title: "تذكرة جديدة",
+    body: "تم تعيين تذكرة لفريق الدعم",
+    severity: "warning",
+    category: "alerts",
+    payload: { ticketId: "T-4821" }
+  })
+});`;
+
+  const copy = async (text: string, label: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast.success(`تم نسخ ${label}`);
+    } catch {
+      toast.error("تعذر النسخ من المتصفح");
+    }
+  };
+
+  return (
+    <section className="space-y-4">
+      <div className="rounded-2xl border bg-card p-5">
+        <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
+          <div>
+            <div className="mb-2 inline-flex items-center gap-2 rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+              <Globe2 className="h-3.5 w-3.5" />
+              الدومين المعتمد
+            </div>
+            <h2 className="text-xl font-bold">الربط الموحد بالـ Webhook</h2>
+            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+              أي نظام في الشركة يضيف هذا الرابط كـ Notify URL ويرسل بيانات بسيطة؛ النظام يحولها إلى Unified Notification ويحفظها في Supabase وتظهر فوراً في اللوحة.
+            </p>
+          </div>
+          <Button variant="outline" onClick={() => void copy(endpoint, "رابط الاستقبال")} className="gap-2">
+            <Copy className="h-4 w-4" />
+            نسخ الرابط
+          </Button>
+        </div>
+
+        <div className="mt-5 rounded-xl border bg-background p-4">
+          <div className="mb-2 flex items-center gap-2 text-sm font-semibold">
+            <ShieldCheck className="h-4 w-4 text-emerald-500" />
+            رابط الاستقبال النشط
+          </div>
+          <code dir="ltr" className="block break-all rounded-lg bg-black/80 p-3 text-left font-mono text-xs text-emerald-300">
+            POST {endpoint}
+          </code>
+          <p className="mt-2 text-xs text-muted-foreground">
+            المصادقة المطلوبة: <span dir="ltr" className="font-mono">Authorization: Bearer YOUR_SOURCE_TOKEN</span>. يمكن تسجيل كل نظام في جدول <span className="font-mono">notification_sources</span> أو استخدام <span className="font-mono">INGEST_TOKEN</span> كحل داخلي مؤقت.
+          </p>
+        </div>
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-[1fr_1.2fr]">
+        <div className="rounded-2xl border bg-card p-5">
+          <div className="mb-4">
+            <h3 className="text-lg font-semibold">إعداد مصدر ربط جديد</h3>
+            <p className="text-xs text-muted-foreground">
+              أنشئ Token، انسخه مرة واحدة، ثم ضعه في أي نظام كـ Webhook/Notify URL.
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            <FieldLabel label="اسم النظام">
+              <input
+                value={sourceForm.name}
+                onChange={(e) => setSourceForm((s) => ({ ...s, name: e.target.value }))}
+                className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+              />
+            </FieldLabel>
+            <FieldLabel label="Domain / وصف المصدر">
+              <input
+                dir="ltr"
+                value={sourceForm.domain}
+                onChange={(e) => setSourceForm((s) => ({ ...s, domain: e.target.value }))}
+                className="w-full rounded-lg border bg-background px-3 py-2 text-left text-sm outline-none focus:ring-1 focus:ring-primary"
+              />
+            </FieldLabel>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <FieldLabel label="Source Key">
+                <input
+                  dir="ltr"
+                  value={sourceForm.sourceKey}
+                  onChange={(e) => setSourceForm((s) => ({ ...s, sourceKey: e.target.value.replace(/\s+/g, "_").toLowerCase() }))}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-left text-sm outline-none focus:ring-1 focus:ring-primary"
+                />
+              </FieldLabel>
+              <FieldLabel label="نوع المصدر">
+                <select
+                  value={sourceForm.sourceType}
+                  onChange={(e) => setSourceForm((s) => ({ ...s, sourceType: e.target.value as typeof sourceForm.sourceType }))}
+                  className="w-full rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:ring-1 focus:ring-primary"
+                >
+                  <option value="custom">Custom</option>
+                  <option value="system">System</option>
+                  <option value="meta">Meta</option>
+                  <option value="uberfix">UberFix</option>
+                  <option value="accounting">Accounting</option>
+                </select>
+              </FieldLabel>
+            </div>
+            <Button onClick={() => createTokenMut.mutate()} disabled={createTokenMut.isPending} className="w-full gap-2">
+              <KeyRound className="h-4 w-4" />
+              {createTokenMut.isPending ? "جاري الإنشاء..." : "إنشاء / تجديد Token وتفعيل المصدر"}
+            </Button>
+          </div>
+
+          {generatedToken && (
+            <div className="mt-4 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-3">
+              <div className="mb-2 text-sm font-semibold text-emerald-600 dark:text-emerald-300">
+                انسخ هذا المفتاح الآن — لن يظهر من قاعدة البيانات مرة أخرى
+              </div>
+              <code dir="ltr" className="block break-all rounded bg-black/80 p-3 text-left font-mono text-[11px] text-emerald-300">
+                {generatedToken}
+              </code>
+              <Button variant="outline" size="sm" onClick={() => void copy(generatedToken, "Token")} className="mt-3 gap-2">
+                <Copy className="h-4 w-4" /> نسخ Token
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-2xl border bg-card p-5">
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div>
+              <h3 className="text-lg font-semibold">الأنظمة المتصلة</h3>
+              <p className="text-xs text-muted-foreground">المصادر المسجلة في Supabase والتي يمكنها إرسال إشعارات.</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => void qc.invalidateQueries({ queryKey: ["notification-sources"] })}>
+              <RefreshCw className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {sourcesError && (
+            <ErrorBanner
+              title="تعذر تحميل مصادر الربط"
+              error={sourcesError}
+              hint="تأكد من وجود جدول notification_sources ومن مفتاح AZ_SUPABASE_SERVICE_ROLE_KEY."
+            />
+          )}
+          {loadingSources && (
+            <div className="py-10 text-center text-sm text-muted-foreground">
+              <RefreshCw className="mx-auto mb-2 h-6 w-6 animate-spin opacity-50" /> جاري التحميل...
+            </div>
+          )}
+          {!loadingSources && !sourcesError && sources.length === 0 && (
+            <div className="rounded-xl border bg-background p-6 text-center text-sm text-muted-foreground">
+              لا توجد مصادر بعد. أنشئ أول Token من النموذج المجاور.
+            </div>
+          )}
+          <div className="space-y-3">
+            {sources.map((source) => (
+              <SourceCard key={source.id} source={source} />
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <IntegrationCodeCard title="مثال cURL" code={curlExample} onCopy={() => void copy(curlExample, "مثال cURL")} />
+        <IntegrationCodeCard title="مثال TypeScript / React / Vite" code={tsExample} onCopy={() => void copy(tsExample, "مثال TypeScript")} />
+      </div>
+
+      <div className="rounded-2xl border bg-card p-5">
+        <h3 className="mb-4 text-lg font-semibold">قنوات التسليم</h3>
+        <div className="grid gap-3 md:grid-cols-3">
+          <GatewayCard channel="Email" status="جاهز للتفعيل" detail="SMTP/Provider عبر Delivery Jobs" icon={<Mail className="h-5 w-5" />} />
+          <GatewayCard channel="WhatsApp / Chat" status="مخطط" detail="Meta WhatsApp API أو مزود خارجي" icon={<MessageSquare className="h-5 w-5" />} />
+          <GatewayCard channel="SMS" status="مخطط" detail="Twilio/Unifonic أو مزود محلي" icon={<Smartphone className="h-5 w-5" />} />
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function FieldLabel({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="text-xs font-semibold text-muted-foreground">{label}</span>
+      {children}
+    </label>
+  );
+}
+
+function SourceCard({ source }: { source: NotificationSourceRow }) {
+  return (
+    <div className="rounded-xl border bg-background p-4">
+      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <h4 className="font-semibold">{source.name}</h4>
+            <Badge variant={source.active ? "default" : "secondary"}>
+              {source.active ? "مفعل" : "غير مفعل"}
+            </Badge>
+            <Badge variant="outline">{source.source_type}</Badge>
+          </div>
+          <div dir="ltr" className="mt-1 text-left font-mono text-xs text-muted-foreground">
+            {source.source_key} · {source.domain}
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground sm:text-left">
+          <div>Limit: {source.rate_limit_per_minute}/min</div>
+          <div>
+            آخر ظهور: {source.last_seen_at ? new Date(source.last_seen_at).toLocaleString("ar") : "لم يستخدم بعد"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function IntegrationCodeCard({ title, code, onCopy }: { title: string; code: string; onCopy: () => void }) {
+  return (
+    <div className="overflow-hidden rounded-2xl border bg-card">
+      <header className="flex items-center justify-between border-b px-4 py-3">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <Code2 className="h-4 w-4 text-primary" />
+          {title}
+        </div>
+        <Button variant="ghost" size="sm" onClick={onCopy} className="gap-2">
+          <Copy className="h-4 w-4" />
+          نسخ
+        </Button>
+      </header>
+      <pre dir="ltr" className="max-h-[360px] overflow-auto bg-black/90 p-4 text-left text-xs text-slate-100">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
+
+function GatewayCard({
+  channel,
+  status,
+  detail,
+  icon,
+}: {
+  channel: string;
+  status: string;
+  detail: string;
+  icon: ReactNode;
+}) {
+  return (
+    <div className="rounded-xl border bg-background p-4">
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2 font-semibold">
+          <span className="text-primary">{icon}</span>
+          {channel}
+        </div>
+        <Badge variant="secondary">{status}</Badge>
+      </div>
+      <p className="text-xs text-muted-foreground">{detail}</p>
+    </div>
+  );
+}
+
+/* -------------------------------------------------------------------------- */
+
 function PreferencesPanel() {
   const getFn = useServerFn(getPreferencesFn);
   const saveFn = useServerFn(savePreferencesFn);
-  const { data, refetch } = useQuery({
+  const { data, refetch, error, isLoading } = useQuery({
     queryKey: ["preferences"],
     queryFn: () => getFn(),
   });
@@ -692,9 +1122,31 @@ function PreferencesPanel() {
       toast.success("تم حفظ التفضيلات");
       refetch();
     },
+    onError: (saveError) => {
+      toast.error("فشل حفظ التفضيلات", {
+        description: saveError instanceof Error ? saveError.message : "راجع إعدادات Supabase",
+      });
+    },
   });
 
-  if (!data) return null;
+  if (error) {
+    return (
+      <ErrorBanner
+        title="تعذر تحميل التفضيلات"
+        error={error}
+        hint="راجع اتصال Supabase ومفتاح AZ_SUPABASE_SERVICE_ROLE_KEY."
+      />
+    );
+  }
+
+  if (isLoading || !data) {
+    return (
+      <section className="rounded-2xl border bg-card p-10 text-center text-sm text-muted-foreground">
+        <RefreshCw className="mx-auto mb-3 h-8 w-8 animate-spin opacity-50" />
+        جاري تحميل الإعدادات...
+      </section>
+    );
+  }
 
   const update = (next: NotificationPreferences) => saveMut.mutate(next);
 
@@ -748,7 +1200,7 @@ function PrefGroup({
   channels: NotificationPreferences["global"];
   onChange: (c: NotificationPreferences["global"]) => void;
 }) {
-  const rows: { key: keyof typeof channels; label: string; icon: React.ReactNode }[] = [
+  const rows: { key: keyof typeof channels; label: string; icon: ReactNode }[] = [
     { key: "inapp", label: "In-App", icon: <Bell className="h-4 w-4" /> },
     { key: "email", label: "Email", icon: <Mail className="h-4 w-4" /> },
     { key: "push", label: "Push", icon: <Smartphone className="h-4 w-4" /> },

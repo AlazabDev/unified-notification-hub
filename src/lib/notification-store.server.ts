@@ -13,7 +13,11 @@ import type {
 
 type Row = {
   id: string;
+  tenant_id?: string;
+  recipient_user_id?: string | null;
   source: string;
+  event_type?: string | null;
+  dedupe_key?: string | null;
   category: string;
   severity: string;
   title: string;
@@ -30,7 +34,11 @@ type Row = {
 function rowToNotification(r: Row): UnifiedNotification {
   return {
     id: r.id,
+    tenantId: r.tenant_id,
+    recipientUserId: r.recipient_user_id ?? undefined,
     source: r.source as UnifiedNotification["source"],
+    eventType: r.event_type ?? undefined,
+    dedupeKey: r.dedupe_key ?? undefined,
     category: r.category as UnifiedNotification["category"],
     severity: r.severity as UnifiedNotification["severity"],
     title: r.title,
@@ -49,7 +57,7 @@ export async function listNotifications(): Promise<UnifiedNotification[]> {
   const { data, error } = await supabaseAdmin
     .from("notifications")
     .select(
-      "id, source, category, severity, title, body, subject, avatar_url, actions, channels, raw, read, created_at",
+      "id, tenant_id, recipient_user_id, source, event_type, dedupe_key, category, severity, title, body, subject, avatar_url, actions, channels, raw, read, created_at",
     )
     .order("created_at", { ascending: false })
     .limit(200);
@@ -60,7 +68,11 @@ export async function listNotifications(): Promise<UnifiedNotification[]> {
 export async function addNotification(n: UnifiedNotification): Promise<void> {
   const { error } = await supabaseAdmin.from("notifications").insert({
     id: n.id,
+    tenant_id: n.tenantId ?? "default",
+    recipient_user_id: n.recipientUserId ?? null,
     source: n.source,
+    event_type: n.eventType ?? null,
+    dedupe_key: n.dedupeKey ?? null,
     category: n.category,
     severity: n.severity,
     title: n.title,
@@ -105,31 +117,52 @@ const DEFAULT_PREFS: NotificationPreferences = {
   workflows: [],
 };
 
+const DEFAULT_TENANT_ID = "default";
+const DEFAULT_PREFERENCES_RECIPIENT_ID = "internal-dashboard";
+
 export async function getPreferences(): Promise<NotificationPreferences> {
   const { data, error } = await supabaseAdmin
     .from("notification_preferences")
-    .select("global, workflows")
-    .eq("id", "global")
-    .maybeSingle();
+    .select("id, recipient_user_id, global, workflows, updated_at")
+    .eq("tenant_id", DEFAULT_TENANT_ID)
+    .or(`recipient_user_id.eq.${DEFAULT_PREFERENCES_RECIPIENT_ID},recipient_user_id.is.null`)
+    .order("updated_at", { ascending: false })
+    .limit(1);
   if (error) throw new Error(error.message);
-  if (!data) return DEFAULT_PREFS;
+  const row = data?.[0];
+  if (!row) return DEFAULT_PREFS;
   return {
-    global: data.global as unknown as NotificationPreferences["global"],
-    workflows: (data.workflows as unknown as NotificationPreferences["workflows"]) ?? [],
+    global: row.global as unknown as NotificationPreferences["global"],
+    workflows: (row.workflows as unknown as NotificationPreferences["workflows"]) ?? [],
   };
 }
 
 export async function savePreferences(
   p: NotificationPreferences,
 ): Promise<void> {
-  const { error } = await supabaseAdmin.from("notification_preferences").upsert(
-    {
-      id: "global",
-      global: p.global as never,
-      workflows: p.workflows as never,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "id" },
-  );
+  const { data: existing, error: findError } = await supabaseAdmin
+    .from("notification_preferences")
+    .select("id")
+    .eq("tenant_id", DEFAULT_TENANT_ID)
+    .or(`recipient_user_id.eq.${DEFAULT_PREFERENCES_RECIPIENT_ID},recipient_user_id.is.null`)
+    .order("updated_at", { ascending: false })
+    .limit(1);
+  if (findError) throw new Error(findError.message);
+
+  const existingId = existing?.[0]?.id;
+  const payload = {
+    tenant_id: DEFAULT_TENANT_ID,
+    recipient_user_id: DEFAULT_PREFERENCES_RECIPIENT_ID,
+    global: p.global as never,
+    workflows: p.workflows as never,
+    updated_at: new Date().toISOString(),
+  };
+
+  const { error } = existingId
+    ? await supabaseAdmin
+        .from("notification_preferences")
+        .update(payload)
+        .eq("id", existingId)
+    : await supabaseAdmin.from("notification_preferences").insert(payload);
   if (error) throw new Error(error.message);
 }

@@ -23,12 +23,12 @@ export type EventLogInput = {
 
 function getSupabaseConfig() {
   const supabaseUrl = getServerEnv("SUPABASE_URL")?.replace(/\/$/, "");
-  const serviceKey = getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
+  const serviceKey = getServerEnv("AZ_SUPABASE_SERVICE_ROLE_KEY") ?? getServerEnv("SUPABASE_SERVICE_ROLE_KEY");
 
   if (!supabaseUrl || !serviceKey) {
     if (isEnabledEnv("REQUIRE_SUPABASE")) {
       throw new Error(
-        "Supabase persistence is required but SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY is missing.",
+        "Supabase persistence is required but SUPABASE_URL or AZ_SUPABASE_SERVICE_ROLE_KEY is missing.",
       );
     }
     return undefined;
@@ -38,12 +38,15 @@ function getSupabaseConfig() {
 }
 
 function headers(serviceKey: string, prefer = "return=minimal") {
-  return {
+  const result: Record<string, string> = {
     apikey: serviceKey,
-    authorization: `Bearer ${serviceKey}`,
     "content-type": "application/json",
     prefer,
   };
+  if (!serviceKey.startsWith("sb_secret_") && !serviceKey.startsWith("sb_publishable_")) {
+    result.authorization = `Bearer ${serviceKey}`;
+  }
+  return result;
 }
 
 function toSupabaseRow(notification: UnifiedNotification) {
