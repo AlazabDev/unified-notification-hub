@@ -1090,7 +1090,7 @@ function GatewayCard({
   channel: string;
   status: string;
   detail: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 }) {
   return (
     <div className="rounded-xl border bg-background p-4">
@@ -1200,7 +1200,7 @@ function PrefGroup({
   channels: NotificationPreferences["global"];
   onChange: (c: NotificationPreferences["global"]) => void;
 }) {
-  const rows: { key: keyof typeof channels; label: string; icon: React.ReactNode }[] = [
+  const rows: { key: keyof typeof channels; label: string; icon: ReactNode }[] = [
     { key: "inapp", label: "In-App", icon: <Bell className="h-4 w-4" /> },
     { key: "email", label: "Email", icon: <Mail className="h-4 w-4" /> },
     { key: "push", label: "Push", icon: <Smartphone className="h-4 w-4" /> },
