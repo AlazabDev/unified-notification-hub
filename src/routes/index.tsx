@@ -283,7 +283,7 @@ function DashboardMobileNav({
   setView: (view: DashboardView) => void;
   unread: number;
 }) {
-  const items: Array<{ view: DashboardView; label: string; icon: React.ReactNode; badge?: number }> = [
+  const items: Array<{ view: DashboardView; label: string; icon: ReactNode; badge?: number }> = [
     { view: "inbox", label: "الوارد", icon: <InboxIcon className="h-4 w-4" />, badge: unread || undefined },
     { view: "preferences", label: "الإعدادات", icon: <SettingsIcon className="h-4 w-4" /> },
     { view: "integrations", label: "الربط", icon: <KeyRound className="h-4 w-4" /> },
@@ -348,7 +348,7 @@ function SideItem({
 }: {
   active?: boolean;
   onClick?: () => void;
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
   badge?: number;
   hint?: string;
