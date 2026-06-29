@@ -1,11 +1,17 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { useServerFn } from "@tanstack/react-start";
 import { supabase } from "@/integrations/supabase/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Activity, Wifi, WifiOff, AlertTriangle, RefreshCw, CheckCircle2 } from "lucide-react";
+import {
+  listDeliveryAttemptsFn,
+  listDeliveryJobsFn,
+  listIngestionErrorEventsFn,
+} from "@/lib/status.functions";
 
 export const Route = createFileRoute("/status")({
   head: () => ({
@@ -24,6 +30,9 @@ function StatusPage() {
   const [wsState, setWsState] = useState<RealtimeState>("connecting");
   const [lastEventAt, setLastEventAt] = useState<string | null>(null);
   const [reconnects, setReconnects] = useState(0);
+  const listAttempts = useServerFn(listDeliveryAttemptsFn);
+  const listJobs = useServerFn(listDeliveryJobsFn);
+  const listErrors = useServerFn(listIngestionErrorEventsFn);
 
   useEffect(() => {
     const channel = supabase
@@ -64,45 +73,19 @@ function StatusPage() {
 
   const { data: attempts, refetch: refetchAttempts, isFetching: loadingAttempts } = useQuery({
     queryKey: ["delivery-attempts"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("notification_delivery_attempts")
-        .select("id, channel, status, provider, attempt_count, last_error, delivered_at, scheduled_at, created_at, notification_id")
-        .order("created_at", { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listAttempts(),
     refetchInterval: 10000,
   });
 
   const { data: failedJobs, refetch: refetchJobs, isFetching: loadingJobs } = useQuery({
     queryKey: ["failed-jobs"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("notification_jobs")
-        .select("id, job_type, status, attempts, max_attempts, last_error, run_at, updated_at, notification_id")
-        .in("status", ["failed", "retry", "pending"])
-        .order("updated_at", { ascending: false })
-        .limit(20);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listJobs(),
     refetchInterval: 10000,
   });
 
   const { data: errorEvents } = useQuery({
     queryKey: ["error-events"],
-    queryFn: async () => {
-      const { data, error } = await supabase
-        .from("notification_events_log")
-        .select("id, status, status_code, error_code, error_message, event_type, created_at")
-        .in("status", ["rejected", "failed"])
-        .order("created_at", { ascending: false })
-        .limit(10);
-      if (error) throw error;
-      return data ?? [];
-    },
+    queryFn: () => listErrors(),
     refetchInterval: 15000,
   });
 

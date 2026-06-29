@@ -77,19 +77,24 @@ export function useNotificationSound(onIncoming?: () => void) {
 
   // Realtime subscription
   useEffect(() => {
-    const channel = supabase
-      .channel("notifications-stream")
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications" },
-        () => {
-          onIncomingRef.current?.();
-          if (enabledRef.current) play();
-        },
-      )
-      .subscribe();
+    let channel: ReturnType<typeof supabase.channel> | undefined;
+    try {
+      channel = supabase
+        .channel("notifications-stream")
+        .on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "notifications" },
+          () => {
+            onIncomingRef.current?.();
+            if (enabledRef.current) play();
+          },
+        )
+        .subscribe();
+    } catch (error) {
+      console.error("supabase_realtime_subscription_failed", error);
+    }
     return () => {
-      void supabase.removeChannel(channel);
+      if (channel) void supabase.removeChannel(channel);
     };
   }, [play]);
 
