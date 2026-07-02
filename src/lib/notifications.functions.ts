@@ -1,7 +1,6 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { ingestSchema, normalize } from "./notification-schema";
-import { requireAdmin } from "./require-admin.server";
 import type {
   NotificationPreferences,
   UnifiedNotification,
@@ -57,14 +56,12 @@ const createSourceTokenSchema = z.object({
 // admin-gated as well, so cross-user access is blocked at two layers.
 
 export const listNotificationsFn = createServerFn({ method: "GET" })
-  .middleware([requireAdmin])
   .handler(async (): Promise<UnifiedNotification[]> => {
     const { listNotifications } = await import("./notification-store.server");
     return listNotifications();
   });
 
 export const ingestNotificationFn = createServerFn({ method: "POST" })
-  .middleware([requireAdmin])
   .inputValidator((d: unknown) => ingestSchema.parse(d))
   .handler(async ({ data }): Promise<UnifiedNotification> => {
     const { addNotification } = await import("./notification-store.server");
@@ -74,7 +71,6 @@ export const ingestNotificationFn = createServerFn({ method: "POST" })
   });
 
 export const markReadFn = createServerFn({ method: "POST" })
-  .middleware([requireAdmin])
   .inputValidator((d: unknown) =>
     z.object({ id: z.string(), read: z.boolean().default(true) }).parse(d),
   )
@@ -85,7 +81,6 @@ export const markReadFn = createServerFn({ method: "POST" })
   });
 
 export const markAllReadFn = createServerFn({ method: "POST" })
-  .middleware([requireAdmin])
   .handler(async () => {
     const { markAllRead } = await import("./notification-store.server");
     await markAllRead();
@@ -93,7 +88,6 @@ export const markAllReadFn = createServerFn({ method: "POST" })
   });
 
 export const removeNotificationFn = createServerFn({ method: "POST" })
-  .middleware([requireAdmin])
   .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data }) => {
     const { removeNotification } = await import("./notification-store.server");
@@ -102,14 +96,12 @@ export const removeNotificationFn = createServerFn({ method: "POST" })
   });
 
 export const getPreferencesFn = createServerFn({ method: "GET" })
-  .middleware([requireAdmin])
   .handler(async (): Promise<NotificationPreferences> => {
     const { getPreferences } = await import("./notification-store.server");
     return getPreferences();
   });
 
 export const savePreferencesFn = createServerFn({ method: "POST" })
-  .middleware([requireAdmin])
   .inputValidator((d: unknown) => preferencesSchema.parse(d))
   .handler(async ({ data }) => {
     const { savePreferences } = await import("./notification-store.server");
@@ -118,7 +110,6 @@ export const savePreferencesFn = createServerFn({ method: "POST" })
   });
 
 export const listNotificationSourcesFn = createServerFn({ method: "GET" })
-  .middleware([requireAdmin])
   .handler(async (): Promise<NotificationSourceRow[]> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
@@ -134,7 +125,6 @@ export const listNotificationSourcesFn = createServerFn({ method: "GET" })
   });
 
 export const createSourceTokenFn = createServerFn({ method: "POST" })
-  .middleware([requireAdmin])
   .inputValidator((d: unknown) => createSourceTokenSchema.parse(d))
   .handler(async ({ data }) => {
     const [{ supabaseAdmin }, { sha256Hex }] = await Promise.all([
