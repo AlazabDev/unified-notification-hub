@@ -186,18 +186,22 @@ export const Route = createFileRoute("/api/public/ingest")({
           notificationId: notification.id,
         });
 
+        // Return only boolean status flags — never forward raw Supabase /
+        // Inngest error strings to callers (they can leak table names,
+        // constraint names, and internal service details).
         return withCors(Response.json(
           {
             ok: true,
             requestId,
             id: notification.id,
             source: auth.source.sourceKey,
-            persistence,
-            job,
-            queue,
+            persisted: persistence.persisted === true,
+            queued: queue.queued === true,
+            jobCreated: job.persisted === true,
           },
           { status: 201 },
         ));
+
       },
       GET: async () =>
         withCors(Response.json({
