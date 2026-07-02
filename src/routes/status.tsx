@@ -13,7 +13,7 @@ import {
   listIngestionErrorEventsFn,
 } from "@/lib/status.functions";
 
-export const Route = createFileRoute("/_authenticated/status")({
+export const Route = createFileRoute("/status")({
   head: () => ({
     meta: [
       { title: "حالة النظام — Az Notification Hub" },
