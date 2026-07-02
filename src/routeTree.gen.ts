@@ -9,18 +9,18 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as StatusRouteImport } from './routes/status'
-import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthenticatedIndexRouteImport } from './routes/_authenticated/index'
+import { Route as AuthenticatedStatusRouteImport } from './routes/_authenticated/status'
 import { Route as ApiPublicIngestRouteImport } from './routes/api/public/ingest'
 
-const StatusRoute = StatusRouteImport.update({
-  id: '/status',
-  path: '/status',
+const AuthenticatedIndexRoute = AuthenticatedIndexRouteImport.update({
+  id: '/_authenticated/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AuthenticatedStatusRoute = AuthenticatedStatusRouteImport.update({
+  id: '/_authenticated/status',
+  path: '/status',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiPublicIngestRoute = ApiPublicIngestRouteImport.update({
@@ -30,49 +30,53 @@ const ApiPublicIngestRoute = ApiPublicIngestRouteImport.update({
 } as any)
 
 export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '/status': typeof StatusRoute
+  '/status': typeof AuthenticatedStatusRoute
+  '/': typeof AuthenticatedIndexRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
 }
 export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '/status': typeof StatusRoute
+  '/status': typeof AuthenticatedStatusRoute
+  '/': typeof AuthenticatedIndexRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
-  '/': typeof IndexRoute
-  '/status': typeof StatusRoute
+  '/_authenticated/status': typeof AuthenticatedStatusRoute
+  '/_authenticated/': typeof AuthenticatedIndexRoute
   '/api/public/ingest': typeof ApiPublicIngestRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/status' | '/api/public/ingest'
+  fullPaths: '/status' | '/' | '/api/public/ingest'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/status' | '/api/public/ingest'
-  id: '__root__' | '/' | '/status' | '/api/public/ingest'
+  to: '/status' | '/' | '/api/public/ingest'
+  id:
+    | '__root__'
+    | '/_authenticated/status'
+    | '/_authenticated/'
+    | '/api/public/ingest'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  StatusRoute: typeof StatusRoute
+  AuthenticatedStatusRoute: typeof AuthenticatedStatusRoute
+  AuthenticatedIndexRoute: typeof AuthenticatedIndexRoute
   ApiPublicIngestRoute: typeof ApiPublicIngestRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/status': {
-      id: '/status'
-      path: '/status'
-      fullPath: '/status'
-      preLoaderRoute: typeof StatusRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/': {
-      id: '/'
+    '/_authenticated/': {
+      id: '/_authenticated/'
       path: '/'
       fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+      preLoaderRoute: typeof AuthenticatedIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated/status': {
+      id: '/_authenticated/status'
+      path: '/status'
+      fullPath: '/status'
+      preLoaderRoute: typeof AuthenticatedStatusRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/public/ingest': {
@@ -86,8 +90,8 @@ declare module '@tanstack/react-router' {
 }
 
 const rootRouteChildren: RootRouteChildren = {
-  IndexRoute: IndexRoute,
-  StatusRoute: StatusRoute,
+  AuthenticatedStatusRoute: AuthenticatedStatusRoute,
+  AuthenticatedIndexRoute: AuthenticatedIndexRoute,
   ApiPublicIngestRoute: ApiPublicIngestRoute,
 }
 export const routeTree = rootRouteImport
