@@ -175,25 +175,18 @@ export async function authorizeIngestRequest(
     }
   }
 
+  // Fallback: single shared INGEST_TOKEN (used only when no source registry
+  // row matched). The previous ALLOW_PUBLIC_INGEST_WITHOUT_TOKEN dev bypass
+  // was removed — a production misconfiguration must never open the endpoint.
   const configuredToken = getServerEnv("INGEST_TOKEN");
-  const allowOpenDevIngest = isEnabledEnv("ALLOW_PUBLIC_INGEST_WITHOUT_TOKEN");
-
   if (!configuredToken) {
-    return allowOpenDevIngest
-      ? {
-          ok: true,
-          source: {
-            tenantId: "default",
-            sourceKey: "dev-open-ingest",
-            sourceType: "custom",
-          },
-        }
-      : { ok: false, status: 503, code: "server_misconfigured" };
+    return { ok: false, status: 503, code: "server_misconfigured" };
   }
 
   if (bearerToken !== configuredToken) {
     return { ok: false, status: 401, code: "invalid_token" };
   }
+
 
   return {
     ok: true,

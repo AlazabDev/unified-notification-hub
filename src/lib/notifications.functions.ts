@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { ingestSchema, normalize } from "./notification-schema";
+import { requireAdmin } from "./require-admin.server";
 import type {
   NotificationPreferences,
   UnifiedNotification,
@@ -51,14 +52,19 @@ const createSourceTokenSchema = z.object({
   rateLimitPerMinute: z.number().int().min(1).max(5000).default(120),
 });
 
-export const listNotificationsFn = createServerFn({ method: "GET" }).handler(
-  async (): Promise<UnifiedNotification[]> => {
+// All dashboard server functions require a signed-in Supabase user who has
+// the `admin` role in `public.user_roles`. RLS on the underlying tables is
+// admin-gated as well, so cross-user access is blocked at two layers.
+
+export const listNotificationsFn = createServerFn({ method: "GET" })
+  .middleware([requireAdmin])
+  .handler(async (): Promise<UnifiedNotification[]> => {
     const { listNotifications } = await import("./notification-store.server");
     return listNotifications();
-  },
-);
+  });
 
 export const ingestNotificationFn = createServerFn({ method: "POST" })
+  .middleware([requireAdmin])
   .inputValidator((d: unknown) => ingestSchema.parse(d))
   .handler(async ({ data }): Promise<UnifiedNotification> => {
     const { addNotification } = await import("./notification-store.server");
@@ -68,6 +74,7 @@ export const ingestNotificationFn = createServerFn({ method: "POST" })
   });
 
 export const markReadFn = createServerFn({ method: "POST" })
+  .middleware([requireAdmin])
   .inputValidator((d: unknown) =>
     z.object({ id: z.string(), read: z.boolean().default(true) }).parse(d),
   )
@@ -77,15 +84,16 @@ export const markReadFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const markAllReadFn = createServerFn({ method: "POST" }).handler(
-  async () => {
+export const markAllReadFn = createServerFn({ method: "POST" })
+  .middleware([requireAdmin])
+  .handler(async () => {
     const { markAllRead } = await import("./notification-store.server");
     await markAllRead();
     return { ok: true };
-  },
-);
+  });
 
 export const removeNotificationFn = createServerFn({ method: "POST" })
+  .middleware([requireAdmin])
   .inputValidator((d: unknown) => z.object({ id: z.string() }).parse(d))
   .handler(async ({ data }) => {
     const { removeNotification } = await import("./notification-store.server");
@@ -93,14 +101,15 @@ export const removeNotificationFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const getPreferencesFn = createServerFn({ method: "GET" }).handler(
-  async (): Promise<NotificationPreferences> => {
+export const getPreferencesFn = createServerFn({ method: "GET" })
+  .middleware([requireAdmin])
+  .handler(async (): Promise<NotificationPreferences> => {
     const { getPreferences } = await import("./notification-store.server");
     return getPreferences();
-  },
-);
+  });
 
 export const savePreferencesFn = createServerFn({ method: "POST" })
+  .middleware([requireAdmin])
   .inputValidator((d: unknown) => preferencesSchema.parse(d))
   .handler(async ({ data }) => {
     const { savePreferences } = await import("./notification-store.server");
@@ -108,20 +117,24 @@ export const savePreferencesFn = createServerFn({ method: "POST" })
     return { ok: true };
   });
 
-export const listNotificationSourcesFn = createServerFn({ method: "GET" }).handler(
-  async (): Promise<NotificationSourceRow[]> => {
+export const listNotificationSourcesFn = createServerFn({ method: "GET" })
+  .middleware([requireAdmin])
+  .handler(async (): Promise<NotificationSourceRow[]> => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
     const { data, error } = await supabaseAdmin
       .from("notification_sources")
       .select("id, name, domain, source_key, source_type, active, rate_limit_per_minute, last_seen_at, updated_at")
       .eq("tenant_id", "default")
       .order("updated_at", { ascending: false });
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("list_notification_sources_failed", error);
+      throw new Error("Failed to load notification sources");
+    }
     return (data ?? []) as NotificationSourceRow[];
-  },
-);
+  });
 
 export const createSourceTokenFn = createServerFn({ method: "POST" })
+  .middleware([requireAdmin])
   .inputValidator((d: unknown) => createSourceTokenSchema.parse(d))
   .handler(async ({ data }) => {
     const [{ supabaseAdmin }, { sha256Hex }] = await Promise.all([
@@ -151,7 +164,10 @@ export const createSourceTokenFn = createServerFn({ method: "POST" })
       .select("id, name, domain, source_key, source_type, active, rate_limit_per_minute, last_seen_at, updated_at")
       .single();
 
-    if (error) throw new Error(error.message);
+    if (error) {
+      console.error("create_source_token_failed", error);
+      throw new Error("Failed to create notification source token");
+    }
 
     return {
       ok: true,
