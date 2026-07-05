@@ -177,3 +177,69 @@ export const createSourceTokenFn = createServerFn({ method: "POST" })
       source: source as NotificationSourceRow,
     };
   });
+
+export const updateNotificationSourceFn = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => updateSourceSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    if (data.name !== undefined) patch.name = data.name;
+    if (data.domain !== undefined) patch.domain = data.domain;
+    if (data.sourceType !== undefined) patch.source_type = data.sourceType;
+    if (data.rateLimitPerMinute !== undefined) patch.rate_limit_per_minute = data.rateLimitPerMinute;
+    if (data.active !== undefined) patch.active = data.active;
+
+    const { data: source, error } = await supabaseAdmin
+      .from("notification_sources")
+      .update(patch)
+      .eq("id", data.id)
+      .select("id, name, domain, source_key, source_type, active, rate_limit_per_minute, last_seen_at, updated_at")
+      .single();
+    if (error) {
+      console.error("update_notification_source_failed", error);
+      throw new Error("Failed to update notification source");
+    }
+    return { ok: true, source: source as NotificationSourceRow };
+  });
+
+export const deleteNotificationSourceFn = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => deleteSourceSchema.parse(d))
+  .handler(async ({ data }) => {
+    const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
+    const { error } = await supabaseAdmin.from("notification_sources").delete().eq("id", data.id);
+    if (error) {
+      console.error("delete_notification_source_failed", error);
+      throw new Error("Failed to delete notification source");
+    }
+    return { ok: true };
+  });
+
+export const rotateSourceTokenFn = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => rotateSourceTokenSchema.parse(d))
+  .handler(async ({ data }) => {
+    const [{ supabaseAdmin }, { sha256Hex }] = await Promise.all([
+      import("@/integrations/supabase/client.server"),
+      import("./edge-crypto.server"),
+    ]);
+    const { data: existing, error: fetchErr } = await supabaseAdmin
+      .from("notification_sources")
+      .select("source_key")
+      .eq("id", data.id)
+      .single();
+    if (fetchErr || !existing) {
+      throw new Error("Source not found");
+    }
+    const token = `az_${existing.source_key}_${crypto.randomUUID().replaceAll("-", "")}_${crypto.randomUUID().replaceAll("-", "")}`;
+    const bearerTokenHash = await sha256Hex(token);
+    const { data: source, error } = await supabaseAdmin
+      .from("notification_sources")
+      .update({ bearer_token_hash: bearerTokenHash, updated_at: new Date().toISOString() })
+      .eq("id", data.id)
+      .select("id, name, domain, source_key, source_type, active, rate_limit_per_minute, last_seen_at, updated_at")
+      .single();
+    if (error) {
+      console.error("rotate_source_token_failed", error);
+      throw new Error("Failed to rotate token");
+    }
+    return { ok: true, token, source: source as NotificationSourceRow };
+  });
