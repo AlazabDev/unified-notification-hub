@@ -182,7 +182,14 @@ export const updateNotificationSourceFn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => updateSourceSchema.parse(d))
   .handler(async ({ data }) => {
     const { supabaseAdmin } = await import("@/integrations/supabase/client.server");
-    const patch: Record<string, unknown> = { updated_at: new Date().toISOString() };
+    const patch: {
+      updated_at: string;
+      name?: string;
+      domain?: string;
+      source_type?: z.infer<typeof sourceTypeSchema>;
+      rate_limit_per_minute?: number;
+      active?: boolean;
+    } = { updated_at: new Date().toISOString() };
     if (data.name !== undefined) patch.name = data.name;
     if (data.domain !== undefined) patch.domain = data.domain;
     if (data.sourceType !== undefined) patch.source_type = data.sourceType;
