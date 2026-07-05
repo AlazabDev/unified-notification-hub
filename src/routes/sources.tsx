@@ -111,7 +111,14 @@ function SourcesPage() {
   });
 
   const updateMut = useMutation({
-    mutationFn: (input: Parameters<typeof updateFn>[0]["data"]) => updateFn({ data: input }),
+    mutationFn: (input: {
+      id: string;
+      name?: string;
+      domain?: string;
+      sourceType?: SourceType;
+      rateLimitPerMinute?: number;
+      active?: boolean;
+    }) => updateFn({ data: input }),
     onSuccess: () => {
       invalidate();
       setEditing(null);
