@@ -51,6 +51,18 @@ const createSourceTokenSchema = z.object({
   rateLimitPerMinute: z.number().int().min(1).max(5000).default(120),
 });
 
+const updateSourceSchema = z.object({
+  id: z.string().uuid(),
+  name: z.string().min(2).optional(),
+  domain: z.string().min(2).optional(),
+  sourceType: sourceTypeSchema.optional(),
+  rateLimitPerMinute: z.number().int().min(1).max(5000).optional(),
+  active: z.boolean().optional(),
+});
+
+const deleteSourceSchema = z.object({ id: z.string().uuid() });
+const rotateSourceTokenSchema = z.object({ id: z.string().uuid() });
+
 // All dashboard server functions require a signed-in Supabase user who has
 // the `admin` role in `public.user_roles`. RLS on the underlying tables is
 // admin-gated as well, so cross-user access is blocked at two layers.
