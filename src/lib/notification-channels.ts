@@ -10,7 +10,7 @@
  */
 
 import type { SoundKey } from "@/hooks/useNotificationSound";
-import type { UnifiedNotification } from "@/types/notification";
+
 
 export type ChannelImportance = "high" | "default" | "low" | "min";
 
