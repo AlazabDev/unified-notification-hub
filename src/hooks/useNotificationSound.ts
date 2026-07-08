@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import {
+  CHANNELS_BY_ID,
+  loadChannelSettings,
+  resolveChannelId,
+} from "@/lib/notification-channels";
 
 import stylishUrl from "@/assets/sound/stylish.mp3";
 import messageUrl from "@/assets/sound/message.mp3";
@@ -15,6 +20,13 @@ export const SOUND_OPTIONS: { key: SoundKey; label: string; url: string }[] = [
   { key: "preview", label: "Preview", url: previewUrl },
 ];
 
+const SOUND_URL: Record<SoundKey, string> = {
+  stylish: stylishUrl,
+  message: messageUrl,
+  notification: notificationUrl,
+  preview: previewUrl,
+};
+
 const LS_ENABLED = "az_notify_sound_enabled";
 const LS_SOUND = "az_notify_sound_key";
 
@@ -28,28 +40,39 @@ export function useNotificationSound(onIncoming?: () => void) {
     return (window.localStorage.getItem(LS_SOUND) as SoundKey) || "stylish";
   });
 
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // A pool of pre-loaded audio elements, one per sound.
+  const poolRef = useRef<Record<SoundKey, HTMLAudioElement> | null>(null);
   const enabledRef = useRef(enabled);
+  const defaultSoundRef = useRef<SoundKey>(soundKey);
   const onIncomingRef = useRef(onIncoming);
 
   useEffect(() => {
     enabledRef.current = enabled;
   }, [enabled]);
   useEffect(() => {
+    defaultSoundRef.current = soundKey;
+  }, [soundKey]);
+  useEffect(() => {
     onIncomingRef.current = onIncoming;
   }, [onIncoming]);
 
   useEffect(() => {
-    const opt = SOUND_OPTIONS.find((s) => s.key === soundKey) ?? SOUND_OPTIONS[0];
-    const audio = new Audio(opt.url);
-    audio.preload = "auto";
-    audio.volume = 0.7;
-    audioRef.current = audio;
-    return () => {
-      audio.pause();
-      audioRef.current = null;
+    const pool: Record<SoundKey, HTMLAudioElement> = {
+      stylish: new Audio(SOUND_URL.stylish),
+      message: new Audio(SOUND_URL.message),
+      notification: new Audio(SOUND_URL.notification),
+      preview: new Audio(SOUND_URL.preview),
     };
-  }, [soundKey]);
+    for (const a of Object.values(pool)) {
+      a.preload = "auto";
+      a.volume = 0.7;
+    }
+    poolRef.current = pool;
+    return () => {
+      for (const a of Object.values(pool)) a.pause();
+      poolRef.current = null;
+    };
+  }, []);
 
   const setEnabled = useCallback((v: boolean) => {
     setEnabledState(v);
@@ -65,9 +88,8 @@ export function useNotificationSound(onIncoming?: () => void) {
     } catch {}
   }, []);
 
-  const play = useCallback(() => {
-    if (!enabledRef.current) return;
-    const a = audioRef.current;
+  const playSound = useCallback((key: SoundKey) => {
+    const a = poolRef.current?.[key];
     if (!a) return;
     try {
       a.currentTime = 0;
@@ -75,7 +97,15 @@ export function useNotificationSound(onIncoming?: () => void) {
     } catch {}
   }, []);
 
-  // Realtime subscription
+  const play = useCallback(
+    (key?: SoundKey) => {
+      if (!enabledRef.current) return;
+      playSound(key ?? defaultSoundRef.current);
+    },
+    [playSound],
+  );
+
+  // Realtime subscription — per-channel sound & mute.
   useEffect(() => {
     let channel: ReturnType<typeof supabase.channel> | undefined;
     try {
@@ -84,9 +114,25 @@ export function useNotificationSound(onIncoming?: () => void) {
         .on(
           "postgres_changes",
           { event: "INSERT", schema: "public", table: "notifications" },
-          () => {
+          (payload) => {
             onIncomingRef.current?.();
-            if (enabledRef.current) play();
+            if (!enabledRef.current) return;
+
+            const row = payload.new as {
+              event_type?: string | null;
+              raw?: unknown;
+            } | null;
+
+            const channelId = row ? resolveChannelId(row) : null;
+            if (channelId) {
+              const def = CHANNELS_BY_ID[channelId];
+              const s = loadChannelSettings(channelId);
+              if (s.muted || def?.importance === "min") return;
+              playSound(s.sound);
+              return;
+            }
+            // Unknown channel → default sound
+            playSound(defaultSoundRef.current);
           },
         )
         .subscribe();
@@ -96,7 +142,8 @@ export function useNotificationSound(onIncoming?: () => void) {
     return () => {
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [play]);
+  }, [playSound]);
 
-  return { enabled, setEnabled, soundKey, setSoundKey, play };
+  return { enabled, setEnabled, soundKey, setSoundKey, play, playSound };
 }
+

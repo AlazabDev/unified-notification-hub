@@ -31,6 +31,15 @@ import { formatDistanceToNow } from "date-fns";
 import { ar } from "date-fns/locale";
 import { Toaster, toast } from "sonner";
 import { useNotificationSound, SOUND_OPTIONS, type SoundKey } from "@/hooks/useNotificationSound";
+import {
+  AZAB_PAYMENT_CHANNELS,
+  IMPORTANCE_LABEL,
+  loadChannelSettings,
+  saveChannelSettings,
+  type ChannelImportance,
+  type ChannelSettings,
+} from "@/lib/notification-channels";
+
 
 import {
   createSourceTokenFn,
@@ -1160,11 +1169,14 @@ function PreferencesPanel() {
       </header>
 
       <div className="space-y-6 p-5">
+        <AzabPaymentsChannelsPanel />
+
         <PrefGroup
           title="التفضيلات العامة"
           channels={data.global}
           onChange={(channels) => update({ ...data, global: channels })}
         />
+
 
         <div>
           <h3 className="mb-3 text-sm font-semibold">حسب نوع الـ Workflow</h3>
@@ -1245,3 +1257,104 @@ function describeChannels(c: NotificationPreferences["global"]) {
   if (c.sms) list.push("SMS");
   return list.join("، ") || "معطّل";
 }
+
+/* -------------------------------------------------------------------------- */
+
+function AzabPaymentsChannelsPanel() {
+  const { playSound } = useNotificationSound();
+  const [settingsMap, setSettingsMap] = useState<Record<string, ChannelSettings>>(
+    () => {
+      if (typeof window === "undefined") return {};
+      const m: Record<string, ChannelSettings> = {};
+      for (const c of AZAB_PAYMENT_CHANNELS) m[c.id] = loadChannelSettings(c.id);
+      return m;
+    },
+  );
+
+  const update = (id: string, patch: Partial<ChannelSettings>) => {
+    setSettingsMap((prev) => {
+      const next = { ...prev, [id]: { ...prev[id], ...patch } };
+      saveChannelSettings(id, next[id]);
+      return next;
+    });
+  };
+
+  const importanceColor: Record<ChannelImportance, string> = {
+    high: "bg-rose-500/10 text-rose-600 dark:text-rose-300",
+    default: "bg-blue-500/10 text-blue-600 dark:text-blue-300",
+    low: "bg-slate-500/10 text-slate-600 dark:text-slate-300",
+    min: "bg-slate-500/10 text-slate-500",
+  };
+
+  return (
+    <div>
+      <div className="mb-3 flex items-center justify-between">
+        <div>
+          <h3 className="text-sm font-semibold">قنوات Azab_Payments</h3>
+          <p className="text-[11px] text-muted-foreground">
+            كل قناة لها صوت وأهمية مستقلة. إعدادات القناة محفوظة على هذا الجهاز فقط (localStorage).
+          </p>
+        </div>
+      </div>
+      <div className="grid gap-3 md:grid-cols-2">
+        {AZAB_PAYMENT_CHANNELS.map((c) => {
+          const s = settingsMap[c.id] ?? loadChannelSettings(c.id);
+          return (
+            <div key={c.id} className="rounded-xl border bg-background p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h4 className="text-sm font-semibold">{c.name}</h4>
+                    <Badge variant="outline" className={cn("border-0 text-[10px]", importanceColor[c.importance])}>
+                      {IMPORTANCE_LABEL[c.importance]}
+                    </Badge>
+                  </div>
+                  <p className="mt-1 text-xs text-muted-foreground">{c.description}</p>
+                  <code dir="ltr" className="mt-2 block text-left font-mono text-[10px] text-muted-foreground">
+                    channelId: {c.id}
+                  </code>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[11px] text-muted-foreground">{s.muted ? "مكتوم" : "مفعّل"}</span>
+                  <Switch
+                    checked={!s.muted}
+                    onCheckedChange={(v) => update(c.id, { muted: !v })}
+                  />
+                </div>
+              </div>
+
+              <div className="mt-3 flex items-center gap-2">
+                <label className="text-[11px] text-muted-foreground">النغمة</label>
+                <select
+                  value={s.sound}
+                  onChange={(e) => {
+                    const sound = e.target.value as SoundKey;
+                    update(c.id, { sound });
+                    setTimeout(() => playSound(sound), 50);
+                  }}
+                  disabled={s.muted}
+                  className="flex-1 rounded-lg border bg-background px-2 py-1.5 text-xs outline-none focus:ring-1 focus:ring-primary disabled:opacity-50"
+                >
+                  {SOUND_OPTIONS.map((o) => (
+                    <option key={o.key} value={o.key}>{o.label}</option>
+                  ))}
+                </select>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => playSound(s.sound)}
+                  disabled={s.muted}
+                  className="h-8 gap-1 text-xs"
+                >
+                  <Volume2 className="h-3.5 w-3.5" />
+                  تجربة
+                </Button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
