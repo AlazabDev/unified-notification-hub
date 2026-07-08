@@ -1169,11 +1169,14 @@ function PreferencesPanel() {
       </header>
 
       <div className="space-y-6 p-5">
+        <AzabPaymentsChannelsPanel />
+
         <PrefGroup
           title="التفضيلات العامة"
           channels={data.global}
           onChange={(channels) => update({ ...data, global: channels })}
         />
+
 
         <div>
           <h3 className="mb-3 text-sm font-semibold">حسب نوع الـ Workflow</h3>
