@@ -110,12 +110,11 @@ export function saveChannelSettings(id: string, s: ChannelSettings): void {
  * Resolve the channel id for a notification.
  * Priority: raw.channelId → eventType → null (unmanaged).
  */
-export function resolveChannelId(
-  n: Pick<UnifiedNotification, "eventType" | "raw"> & {
-    // Realtime row shape uses snake_case
-    event_type?: string | null;
-  },
-): string | null {
+export function resolveChannelId(n: {
+  eventType?: string | null;
+  event_type?: string | null;
+  raw?: unknown;
+}): string | null {
   const raw = n.raw;
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     const c = (raw as Record<string, unknown>).channelId;
@@ -125,6 +124,7 @@ export function resolveChannelId(
   if (evt && CHANNELS_BY_ID[evt]) return evt;
   return null;
 }
+
 
 export const IMPORTANCE_LABEL: Record<ChannelImportance, string> = {
   high: "IMPORTANCE_HIGH",
